@@ -1,4 +1,4 @@
-# src/edms_assistant/tools/attachment_tools.py
+# src/edms_assistant/tools/attachment_tool.py
 import json
 from typing import Optional
 from uuid import UUID

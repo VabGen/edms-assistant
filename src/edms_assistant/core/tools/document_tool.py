@@ -1,4 +1,4 @@
-# src\edms_assistant\tools\document_tools.py
+# src\edms_assistant\tools\document_tool.py
 """
 Инструменты для работы с документами в EDMS.
 Все инструменты возвращают сырые данные от EDMS API (в формате JSON-строки).
@@ -15,7 +15,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class GetDocumentByIdInput(BaseModel):
+class GetDocumentInput(BaseModel):
     """Схема входных данных для получения документа по ID."""
 
     document_id: str = Field(..., description="UUID документа в EDMS.")
@@ -23,7 +23,7 @@ class GetDocumentByIdInput(BaseModel):
 
 
 @tool(
-    args_schema=GetDocumentByIdInput,
+    args_schema=GetDocumentInput,
     name_or_callable="get_document_tool",
     description="Получить документ по ID из EDMS. Возвращает сырой JSON-ответ от Java API в виде строки.",
 )
@@ -41,12 +41,6 @@ async def get_document_tool(document_id: str, service_token: str) -> dict:
     # === 1. Валидация document_id ===
     doc_uuid = validate_document_id(document_id)
     if doc_uuid is None:
-        # error_response = {
-        #     "error": "invalid_document_id",
-        #     "message": f"Неверный формат ID документа: '{document_id}'. Ожидался UUID.",
-        #     "details": "Не удалось преобразовать строку в UUID."
-        # }
-        # return json.dumps(error_response, ensure_ascii=False)
         return {
             "error": "invalid_document_id",
             "message": f"Неверный формат ID документа: '{document_id}'. Ожидался UUID.",

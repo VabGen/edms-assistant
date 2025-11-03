@@ -103,10 +103,6 @@ class DocumentClient:
             return None
 
     # === Документы (все методы возвращают JSON) ===
-    # async def get_document(self, document_id: UUID) -> Optional[Dict[str, Any]]:
-    #     """Получить документ по ID. Возвращает JSON."""
-    #     return await self._make_request("GET", f"api/document/{document_id}")
-
     async def get_document(self, document_id: UUID) -> Optional[DocumentDto]:
         """Получить документ по ID. Возвращает типизированную модель."""
         data = await self._make_request("GET", f"api/document/{document_id}")
@@ -237,6 +233,15 @@ class DocumentClient:
             "GET", f"api/document/{document_id}/contract-version-info"
         )
 
+        # === Поиск сотрудников (возвращают JSON) ===
+    async def search_employees(self, filter_data: dict) -> Optional[Dict[str, Any]]:
+        """Выполняет поиск сотрудников через POST /api/employee/search."""
+        return await self._make_request("POST", "api/employee/search", json=filter_data)
+
+    async def get_employee_by_id(self, employee_id: UUID) -> Optional[Dict[str, Any]]:
+        """Получить сотрудника по ID. Возвращает JSON."""
+        return await self._make_request("GET", f"api/employee/{employee_id}")
+
     # === ФАЙЛОВЫЕ МЕТОДЫ (возвращают БАЙТЫ, НЕ JSON) ===
     async def download_attachment(
         self, document_id: UUID, attachment_id: UUID
@@ -255,48 +260,3 @@ class DocumentClient:
         except Exception as e:
             logger.error(f"Ошибка загрузки вложения {attachment_id}: {e}")
             return None
-
-
-# # ------------------------------------------------------------------------------
-#     async def download_attachment(
-#             self, document_id: UUID, version_id: UUID, attach_id: UUID
-#     ) -> Optional[bytes]:
-#         """
-#         Скачать вложение (файл) как байты.
-#
-#         ⚠️ Этот метод возвращает bytes, а не JSON!
-#         Используйте только для загрузки файлов.
-#
-#         Returns:
-#             bytes — содержимое файла, или None в случае ошибки.
-#         """
-#         endpoint = f"api/document/{document_id}/contract-version-info/{version_id}/attachment/{attach_id}/download"
-#         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-#         headers = self._get_headers()
-#         try:
-#             response = await self.client.get(url, headers=headers)
-#             await handle_api_error(response, f"GET (binary) {url}")
-#             return response.content
-#         except Exception as e:
-#             logger.error(f"Failed to download attachment: {e}")
-#             return None
-#
-#     async def stream_zip_attachment(
-#             self, document_id: UUID, version_id: UUID
-#     ) -> AsyncIterator[bytes]:
-#         """
-#         Потоковая загрузка ZIP-архива вложений.
-#
-#         ⚠️ Этот метод возвращает AsyncIterator[bytes], а не JSON!
-#         Используйте только для потоковой загрузки файлов.
-#
-#         Yields:
-#             bytes — фрагменты ZIP-файла.
-#         """
-#         endpoint = f"api/document/{document_id}/contract-version-info/{version_id}/attachment/zip/download-stream"
-#         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-#         headers = self._get_headers()
-#         async with self.client.stream("GET", url, headers=headers) as response:
-#             await handle_api_error(response, f"STREAM (binary) {url}")
-#             async for chunk in response.aiter_bytes():
-#                 yield chunk

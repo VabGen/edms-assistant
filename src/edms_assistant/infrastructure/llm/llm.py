@@ -1,4 +1,6 @@
 # src/edms_assistant/infrastructure/llm/llm.py
+from gc import enable
+
 from langchain_openai import ChatOpenAI
 from edms_assistant.config.settings import settings
 import logging

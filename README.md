@@ -51,6 +51,7 @@ uv pip install openai
 
 ### Установка зависимостей из pyproject.toml
 uv sync
+uv sync --all-extras --dev
 uv pip install -e .         - установка в editable-режиме
 uv pip install -e .[dev]    - с dev-зависимостями
 uv pip install -e .[nlp]    - с дополнительной группой (если объявлена)

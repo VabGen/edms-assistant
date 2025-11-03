@@ -1,39 +1,30 @@
-# src\edms_assistant\main.py
+# src/edms_assistant/main.py
 import asyncio
 import logging
 from dotenv import load_dotenv
-from edms_assistant.infrastructure.llm.llm import get_llm
-from langchain_core.messages import HumanMessage
-
-# from edms_assistant.core.agent import create_agent_graph
-from edms_assistant.config.settings import settings
-
-# from edms_assistant.core.state import EDMSAgentState
-from langgraph.types import Command
+from src.edms_assistant.core.orchestrator.orchestrator import create_orchestrator_graph
+from src.edms_assistant.config.settings import settings
+from src.edms_assistant.utils.logging import setup_logging
 
 load_dotenv()
+setup_logging()
 
-logging.basicConfig(level=getattr(logging, settings.logging_level))
 logger = logging.getLogger(__name__)
 
-
 async def main():
-    logger.info("Starting EDMS Assistant.")
+    logger.info("Starting EDMS Assistant with orchestrator...")
+    graph = create_orchestrator_graph()
 
-    try:
-        llm = get_llm()
-        logger.info("Invoking LLM with test prompt...")
+    initial_state = {
+        "user_id": "123e4567-e89b-12d3-a456-426614174000",
+        "service_token": settings.edms.service_token,
+        "user_message": "Покажи документ с ID 123",
+        "messages": [{"role": "user", "content": "Покажи документ с ID 123"}],
+        "plan": None,
+    }
 
-        response = await llm.ainvoke("привет")
-        logger.info("✅ LLM responded successfully.")
-        print("\n--- LLM Response ---")
-        print(response.content)
-        print("--------------------\n")
-
-    except Exception as e:
-        logger.error(f"❌ LLM call failed: {e}", exc_info=True)
-        raise
-
+    result = await graph.ainvoke(initial_state, config={"configurable": {"thread_id": "test"}})
+    print("Final state:", result)
 
 if __name__ == "__main__":
     asyncio.run(main())

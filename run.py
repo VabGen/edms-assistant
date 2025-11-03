@@ -7,6 +7,8 @@ import atexit
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
+from edms_assistant.presentation.api import app
+from src.edms_assistant.config.settings import settings
 
 load_dotenv()
 
@@ -32,9 +34,6 @@ def cleanup_temp_dir():
 
 
 atexit.register(cleanup_temp_dir)
-
-from edms_assistant.config.settings import settings
-from edms_assistant.presentation.api import app
 
 if __name__ == "__main__":
     import uvicorn

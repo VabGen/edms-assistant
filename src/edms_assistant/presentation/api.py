@@ -1,16 +1,27 @@
-# src/edms_assistant/presentation/api.py
+# src\edms_assistant\presentation\api.py
 import logging
 import tempfile
 import uuid
+import json
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    BackgroundTasks,
+    Body,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from src.edms_assistant.graph.graph import create_agent_graph
+from langchain_core.messages import ToolMessage
+from langgraph.types import Command
+from src.edms_assistant.core.orchestrator.orchestrator import create_orchestrator_graph
+from src.edms_assistant.core.agents.employee_agent import create_employee_agent_graph
 
 logger = logging.getLogger(__name__)
 
-# Директория для загрузок
 UPLOAD_DIR = Path(tempfile.gettempdir()) / "edms_agent_uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -22,12 +33,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 def _cleanup_file(file_path: Path):
     """Фоновая задача для удаления временного файла."""
@@ -37,32 +47,44 @@ def _cleanup_file(file_path: Path):
     except Exception as e:
         logger.warning(f"Failed to clean up {file_path}: {e}")
 
-
 @app.post("/chat")
 async def assistant_chat(
-    background_tasks: BackgroundTasks,
-    user_id: str = Form(...),
-    service_token: str = Form(...),
-    message: str = Form(...),
-    document_id: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None),
-    attachment_id: Optional[str] = Form(None),
+        background_tasks: BackgroundTasks,
+        user_id: str = Form(None),
+        service_token: str = Form(None),
+        message: str = Form(None),
+        selected_candidate_id: str = Form(None),
+        document_id: Optional[str] = Form(None),
+        file: Optional[UploadFile] = File(None),
+        thread_id: Optional[str] = Form(None),
 ):
-    # === 1. Валидация user_id ===
-    try:
-        user_uuid = uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail="Invalid user_id format. Must be a valid UUID."
-        )
+    logger.info(f"API received: user_id={user_id}, document_id={document_id}, message={message}, selected_candidate_id={selected_candidate_id}")
 
-    # === 2. Валидация service_token (минимальная) ===
-    if not service_token or len(service_token) < 10:
-        raise HTTPException(status_code=400, detail="Invalid or missing service_token.")
+    # === 1. Валидация thread_id ===
+    if thread_id:
+        try:
+            user_uuid = uuid.UUID(thread_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid thread_id format. Must be a valid UUID."
+            )
+    else:
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id is required if no thread_id provided.")
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid user_id format. Must be a valid UUID."
+            )
 
-    # === 3. Обработка файла (если есть) ===
+    # === 2. Валидация service_token (если есть) ===
+    if service_token and len(service_token) < 10:
+        raise HTTPException(status_code=400, detail="Invalid service_token.")
+
+    # === 3. Обработка файла (если есть и это новый запрос) ===
     file_path: Optional[Path] = None
-    if file:
+    if file and not selected_candidate_id:  # Только если это не уточнение
         safe_filename = Path(file.filename).name
         if not safe_filename:
             raise HTTPException(status_code=400, detail="Invalid file name.")
@@ -79,35 +101,82 @@ async def assistant_chat(
                 status_code=500, detail="Failed to process uploaded file."
             )
 
-    # === 4. Логирование (без токена!) ===
-    masked_token = (
-        f"{service_token[:6]}***{service_token[-4:]}" if service_token else "N/A"
-    )
-    logger.info(
-        f"Incoming request: user_id={user_uuid}, document_id={document_id}, "
-        f"message_preview='{message[:50]}...', file={file_path is not None}, token={masked_token}"
-    )
+    config = {"configurable": {"thread_id": str(user_uuid)}}
+
+    # === 4. Если пришло уточнение, вызываем employee_agent отдельно ===
+    if selected_candidate_id:
+        if not service_token:
+            raise HTTPException(status_code=400, detail="service_token is required for clarification.")
+
+        employee_graph = create_employee_agent_graph()
+
+        # Создаём ToolMessage с ID кандидата
+        tool_msg = ToolMessage(
+            content=json.dumps({"id": selected_candidate_id}), tool_call_id="mock"
+        )
+
+        # Вызываем employee_agent_graph с ToolMessage
+        result = await employee_graph.ainvoke(
+            {
+                "messages": [tool_msg],
+                "service_token": service_token,
+                "user_message": "",
+            },
+            config=config
+        )
+
+        last_message = result["messages"][-1]
+        content = getattr(last_message, "content", "Нет ответа.")
+        return {"response": content}
+
+    # === 5. Иначе — обычный запуск оркестратора ===
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required for new request.")
+
+    graph = create_orchestrator_graph()
+
+    initial_state = {
+        "user_id": user_uuid,
+        "service_token": service_token,
+        "document_id": document_id,
+        "user_message": message,
+        "messages": [{"role": "user", "content": message}],
+        "uploaded_file_path": str(file_path) if file_path else None,
+        "uploaded_file_name": file.filename if file else None,
+        # ✅ поля, которые ожидает orchestrator_planner
+        "next_agent": None,
+        "agent_input": None,
+        "requires_clarification": None,
+        "sub_agent_result": None,
+        "requires_human_input": False,
+        "error": None,
+        "attachment_id": None,
+        "attachment_name": None,
+        "current_document": None,
+    }
 
     try:
-        graph = create_agent_graph()
-        initial_state = {
-            "user_id": user_uuid,
-            "service_token": service_token,
-            "document_id": document_id,
-            "user_message": message,
-            "messages": [{"role": "user", "content": message}],
-            "uploaded_file_path": str(file_path) if file_path else None,
-            "uploaded_file_name": file.filename if file else None,
-            "attachment_id": attachment_id,
-            "attachment_name": None,
-        }
-        result = await graph.ainvoke(
-            initial_state, config={"configurable": {"thread_id": str(user_uuid)}}
-        )
+        result = await graph.ainvoke(initial_state, config=config)
+
+        # === ПРОВЕРКА ПРЕРЫВАНИЯ ===
+        if "__interrupt__" in result:
+            interrupt_data = result["__interrupt__"][0].value
+            if interrupt_data.get("type") == "clarification":
+                candidates = interrupt_data["candidates"]
+                options = "\n".join(
+                    f"{i + 1}. {c['last_name']} {c['first_name']} {c['middle_name']} (ID: {c['id']})"
+                    for i, c in enumerate(candidates)
+                )
+                return {
+                    "response": f"Найдено несколько ответственных:\n{options}\n\nУточните выбор (укажите номер или ID):",
+                    "requires_clarification": True,
+                    "thread_id": str(user_uuid),
+                    "candidates": candidates,
+                }
+
         last_message = result["messages"][-1]
         content = getattr(last_message, "content", "Нет ответа.")
 
-        # Удаляем файл ТОЛЬКО после успешной обработки
         if file_path:
             background_tasks.add_task(_cleanup_file, file_path)
 
@@ -115,25 +184,43 @@ async def assistant_chat(
 
     except Exception as e:
         logger.error(f"Agent execution failed: {e}", exc_info=True)
-        # Удаляем файл даже при ошибке
         if file_path:
             background_tasks.add_task(_cleanup_file, file_path)
         raise HTTPException(status_code=500, detail="Agent error")
 
 
-# # src/edms_assistant/presentation/api.py
+
+
+
+
+
+
+
+
+
+
 # import logging
 # import tempfile
 # import uuid
+# import json
 # from pathlib import Path
 # from typing import Optional
+# from fastapi import (
+#     FastAPI,
+#     HTTPException,
+#     UploadFile,
+#     File,
+#     Form,
+#     BackgroundTasks,
+#     Body,
+# )
 # from fastapi.middleware.cors import CORSMiddleware
-# from src.edms_assistant.graph.graph import create_agent_graph
-# from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
+# from langchain_core.messages import ToolMessage
+# from langgraph.types import Command
+# from src.edms_assistant.core.orchestrator.orchestrator import create_orchestrator_graph
 #
 # logger = logging.getLogger(__name__)
 #
-# # директория для загрузок
 # UPLOAD_DIR = Path(tempfile.gettempdir()) / "edms_agent_uploads"
 # UPLOAD_DIR.mkdir(exist_ok=True)
 #
@@ -145,7 +232,7 @@ async def assistant_chat(
 #
 # app.add_middleware(
 #     CORSMiddleware,
-#     allow_origins=["*"],
+#     allow_origins=["http://localhost:3000"],
 #     allow_credentials=True,
 #     allow_methods=["*"],
 #     allow_headers=["*"],
@@ -163,28 +250,43 @@ async def assistant_chat(
 #
 # @app.post("/chat")
 # async def assistant_chat(
-#     background_tasks: BackgroundTasks,
-#     user_id: str = Form(...),
-#     service_token: str = Form(...),
-#     message: str = Form(...),
-#     document_id: Optional[str] = Form(None),
-#     file: Optional[UploadFile] = File(None),
-#     attachment_id: Optional[str] = Form(None),
+#         background_tasks: BackgroundTasks,
+#         user_id: str = Form(None),
+#         service_token: str = Form(None),
+#         message: str = Form(None),
+#         selected_candidate_id: str = Form(None),
+#         document_id: Optional[str] = Form(None),
+#         file: Optional[UploadFile] = File(None),
+#         thread_id: Optional[str] = Form(None),
 # ):
-#     # === 1. Валидация user_id ===
-#     try:
-#         user_uuid = uuid.UUID(user_id)
-#     except ValueError:
-#         raise HTTPException(
-#             status_code=400, detail="Invalid user_id format. Must be a valid UUID."
-#         )
+#     logger.info(
+#         f"API received: user_id={user_id}, document_id={document_id}, message={message}, selected_candidate_id={selected_candidate_id}")
 #
-#     # === 2. Валидация service_token (минимальная) ===
-#     if not service_token or len(service_token) < 10:
-#         raise HTTPException(status_code=400, detail="Invalid or missing service_token.")
+#     # === 1. Валидация thread_id ===
+#     if thread_id:
+#         try:
+#             user_uuid = uuid.UUID(thread_id)
+#         except ValueError:
+#             raise HTTPException(
+#                 status_code=400, detail="Invalid thread_id format. Must be a valid UUID."
+#             )
+#     else:
+#         if not user_id:
+#             raise HTTPException(status_code=400, detail="user_id is required if no thread_id provided.")
+#         try:
+#             user_uuid = uuid.UUID(user_id)
+#         except ValueError:
+#             raise HTTPException(
+#                 status_code=400, detail="Invalid user_id format. Must be a valid UUID."
+#             )
 #
+#     # === 2. Валидация service_token (если есть) ===
+#     if service_token and len(service_token) < 10:
+#         raise HTTPException(status_code=400, detail="Invalid service_token.")
+#
+#     # === 3. Обработка файла (если есть и это новый запрос) ===
 #     file_path: Optional[Path] = None
-#     if file:
+#     if file and not selected_candidate_id:  # Только если это не уточнение
 #         safe_filename = Path(file.filename).name
 #         if not safe_filename:
 #             raise HTTPException(status_code=400, detail="Invalid file name.")
@@ -195,32 +297,86 @@ async def assistant_chat(
 #                 content = await file.read()
 #                 f.write(content)
 #             logger.info(f"Saved uploaded file to {file_path}")
-#             # НЕ удаляем файл здесь!
 #         except Exception as e:
 #             logger.error(f"File save error: {e}")
 #             raise HTTPException(
 #                 status_code=500, detail="Failed to process uploaded file."
 #             )
 #
-#     try:
-#         graph = create_agent_graph()
-#         initial_state = {
-#             "user_id": user_uuid,
-#             "service_token": service_token,
-#             "document_id": document_id,
-#             "user_message": message,
-#             "messages": [{"role": "user", "content": message}],
-#             "uploaded_file_path": str(file_path) if file_path else None,
-#             "attachment_id": attachment_id,
-#             "attachment_name": None,
-#         }
-#         result = await graph.ainvoke(
-#             initial_state, config={"configurable": {"thread_id": str(user_uuid)}}
+#     graph = create_orchestrator_graph()
+#     config = {"configurable": {"thread_id": str(user_uuid)}}
+#
+#     # === 4. Если пришло уточнение, продолжаем выполнение ===
+#     if selected_candidate_id:
+#         if not service_token:
+#             raise HTTPException(status_code=400, detail="service_token is required for clarification.")
+#
+#         from langchain_core.messages import ToolMessage
+#         from langgraph.types import Command
+#
+#         # Создаём ToolMessage
+#         tool_msg = ToolMessage(
+#             content=json.dumps({"id": selected_candidate_id}), tool_call_id="mock"
 #         )
+#
+#         command = Command(
+#             resume={
+#                 "values": {
+#                     "messages": [tool_msg]
+#                 }
+#             }
+#         )
+#         result = await graph.ainvoke(command, config=config)
+#
+#         last_message = result["messages"][-1]
+#         content = getattr(last_message, "content", "Нет ответа.")
+#         return {"response": content}
+#
+#     # === 5. Иначе — обычный запуск ===
+#     if not message:
+#         raise HTTPException(status_code=400, detail="Message is required for new request.")
+#
+#     initial_state = {
+#         "user_id": user_uuid,
+#         "service_token": service_token,
+#         "document_id": document_id,
+#         "user_message": message,
+#         "messages": [{"role": "user", "content": message}],
+#         "uploaded_file_path": str(file_path) if file_path else None,
+#         "uploaded_file_name": file.filename if file else None,
+#         "next_agent": None,
+#         "agent_input": None,
+#         "requires_clarification": None,
+#         "sub_agent_result": None,
+#         "requires_human_input": False,
+#         "error": None,
+#         "attachment_id": None,
+#         "attachment_name": None,
+#         "current_document": None,
+#     }
+#
+#     try:
+#         result = await graph.ainvoke(initial_state, config=config)
+#
+#         # === ПРОВЕРКА ПРЕРЫВАНИЯ ===
+#         if "__interrupt__" in result:
+#             interrupt_data = result["__interrupt__"][0].value
+#             if interrupt_data.get("type") == "clarification":
+#                 candidates = interrupt_data["candidates"]
+#                 options = "\n".join(
+#                     f"{i + 1}. {c['last_name']} {c['first_name']} {c['middle_name']} (ID: {c['id']})"
+#                     for i, c in enumerate(candidates)
+#                 )
+#                 return {
+#                     "response": f"Найдено несколько ответственных:\n{options}\n\nУточните выбор (укажите номер или ID):",
+#                     "requires_clarification": True,
+#                     "thread_id": str(user_uuid),
+#                     "candidates": candidates,
+#                 }
+#
 #         last_message = result["messages"][-1]
 #         content = getattr(last_message, "content", "Нет ответа.")
 #
-#         # Удаляем файл ТОЛЬКО ПОСЛЕ успешной обработки
 #         if file_path:
 #             background_tasks.add_task(_cleanup_file, file_path)
 #
@@ -228,43 +384,6 @@ async def assistant_chat(
 #
 #     except Exception as e:
 #         logger.error(f"Agent execution failed: {e}", exc_info=True)
-#         # Удаляем файл даже при ошибке
 #         if file_path:
 #             background_tasks.add_task(_cleanup_file, file_path)
-#             raise HTTPException(status_code=500, detail="Agent error")
-#
-#     # === 4. Логируем (без токена!) ===
-#     masked_token = (
-#         f"{service_token[:6]}***{service_token[-4:]}" if service_token else "N/A"
-#     )
-#     logger.info(
-#         f"Incoming request: user_id={user_uuid}, document_id={document_id}, "
-#         f"message_preview='{message[:50]}...', file={file_path is not None}, token={masked_token}"
-#     )
-#     try:
-#         graph = create_agent_graph()
-#         initial_state = {
-#             "user_id": user_uuid,
-#             "service_token": service_token,
-#             "document_id": document_id,
-#             "user_message": message,
-#             "messages": [{"role": "user", "content": message}],
-#             "uploaded_file_path": str(file_path) if file_path else None,
-#             "requires_human_input": False,
-#             "attachment_id": attachment_id,
-#             "attachment_name": None,
-#             "error": None,
-#         }
-#         result = await graph.ainvoke(
-#             initial_state, config={"configurable": {"thread_id": str(user_uuid)}}
-#         )
-#         last_message = result["messages"][-1]
-#         if isinstance(last_message, dict):
-#             content = last_message.get("content", "Нет ответа.")
-#         else:
-#             content = getattr(last_message, "content", "Нет ответа.")
-#         return {"response": content}
-#
-#     except Exception as e:
-#         logger.error(f"Agent execution failed: {e}", exc_info=True)
 #         raise HTTPException(status_code=500, detail="Agent error")

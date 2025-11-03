@@ -64,10 +64,16 @@ class Settings(BaseSettings):
 
     # Storage & Checkpointing
     store_type: str = "memory"
-    checkpointer_type: str = "postgres"
-    checkpointer_postgres_url: PostgresDsn = Field(
-        ..., description="PostgreSQL DSN для LangGraph Checkpointer"
+    checkpointer_type: str = "memory"
+    checkpointer_postgres_url: Optional[PostgresDsn] = Field(
+        None,
+        description="PostgreSQL DSN для LangGraph Checkpointer (опционально)"
     )
+    # store_type: str = "memory"
+    # checkpointer_type: str = "postgres"
+    # checkpointer_postgres_url: PostgresDsn = Field(
+    #     ..., description="PostgreSQL DSN для LangGraph Checkpointer"
+    # )
 
     model_config = {
         "env_file": ".env",
