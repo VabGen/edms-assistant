@@ -10,6 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class FindResponsibleInput(BaseModel):
     last_name: str = Field(..., description="Фамилия ответственного (обязательно)")
     service_token: str = Field(..., description="JWT-токен для авторизации")
@@ -18,16 +19,17 @@ class FindResponsibleInput(BaseModel):
         None, description="ID подразделения (опционально)"
     )
 
+
 @tool(
     args_schema=FindResponsibleInput,
     name_or_callable="find_responsible",
     description="Найти ответственных лиц по фамилии (и опционально по имени и подразделению). Возвращает список кандидатов.",
 )
 async def find_responsible_tool(
-        last_name: str,
-        service_token: str,
-        first_name: Optional[str] = None,
-        department_id: Optional[UUID] = None,
+    last_name: str,
+    service_token: str,
+    first_name: Optional[str] = None,
+    department_id: Optional[UUID] = None,
 ) -> str:
     """
     Выполняет поиск сотрудников через EDMS API /employee/search.
@@ -43,7 +45,9 @@ async def find_responsible_tool(
 
         async with DocumentClient(service_token=service_token) as client:
             # ✅ Вызываем метод клиента
-            response = await client.search_employees(filter_data.model_dump(exclude_none=True, mode="json"))
+            response = await client.search_employees(
+                filter_data.model_dump(exclude_none=True, mode="json")
+            )
 
         if not response or "content" not in response:
             return json.dumps({"error": "Пустой ответ от EDMS"})

@@ -11,6 +11,7 @@ llm = get_llm()
 
 logger = logging.getLogger(__name__)
 
+
 async def load_document_node(state: GlobalState) -> dict:
     logger.info("load_document_node: started")
     agent_input = state.get("agent_input", {})
@@ -20,24 +21,34 @@ async def load_document_node(state: GlobalState) -> dict:
 
     if not doc_id:
         logger.warning("load_document_node: document_id not provided in agent_input")
-        return {"current_document": None, "error": "document_id not provided in agent_input"}
+        return {
+            "current_document": None,
+            "error": "document_id not provided in agent_input",
+        }
 
     service_token = state["service_token"]
     logger.info(f"load_document_node: calling get_document_tool with doc_id={doc_id}")
 
     try:
-        doc_data = await get_document_tool.ainvoke({"document_id": doc_id, "service_token": service_token})
-        logger.info(f"load_document_node: got doc_data = {type(doc_data)}, keys = {list(doc_data.keys()) if isinstance(doc_data, dict) else 'not dict'}")
+        doc_data = await get_document_tool.ainvoke(
+            {"document_id": doc_id, "service_token": service_token}
+        )
+        logger.info(
+            f"load_document_node: got doc_data = {type(doc_data)}, keys = {list(doc_data.keys()) if isinstance(doc_data, dict) else 'not dict'}"
+        )
         return {"current_document": doc_data}
     except Exception as e:
         logger.error(f"load_document_node: error calling tool: {e}", exc_info=True)
         return {"current_document": None, "error": str(e)}
 
+
 async def format_and_respond_node(state: GlobalState) -> dict:
     logger.info("format_and_respond_node: started")
     doc_data = state.get("current_document")
     user_msg = state.get("user_message", "").lower()
-    logger.info(f"format_and_respond_node: doc_data = {doc_data}, user_msg = {user_msg}")
+    logger.info(
+        f"format_and_respond_node: doc_data = {doc_data}, user_msg = {user_msg}"
+    )
 
     if not doc_data or "error" in doc_data:
         logger.warning("format_and_respond_node: doc_data is None or has error")
@@ -69,7 +80,9 @@ async def format_and_respond_node(state: GlobalState) -> dict:
         create_date = doc_data.get("createDate")
         if create_date:
             try:
-                dt = datetime.datetime.fromisoformat(str(create_date).replace("Z", "+00:00"))
+                dt = datetime.datetime.fromisoformat(
+                    str(create_date).replace("Z", "+00:00")
+                )
                 response = f"Дата создания документа: {dt.strftime('%d.%m.%Y')}"
             except:
                 response = f"Дата создания документа: {create_date}"
@@ -78,7 +91,9 @@ async def format_and_respond_node(state: GlobalState) -> dict:
 
     elif "номер" in user_msg and ("рег" in user_msg or "регистрации" in user_msg):
         reg_number = doc_data.get("regNumber")
-        response = f"Рег. номер: {reg_number}" if reg_number else "Рег. номер не указан."
+        response = (
+            f"Рег. номер: {reg_number}" if reg_number else "Рег. номер не указан."
+        )
 
     elif "сумма" in user_msg or "договор" in user_msg and "сумм" in user_msg:
         contract_sum = doc_data.get("contractSum")
@@ -95,6 +110,7 @@ async def format_and_respond_node(state: GlobalState) -> dict:
 
     logger.info(f"format_and_respond_node: response = {response[:100]}...")
     return {"messages": [AIMessage(content=response)]}
+
 
 def format_full_document(doc: dict) -> str:
     """Форматирует ВЕСЬ DocumentDto в читаемый текст."""
@@ -157,7 +173,9 @@ def format_full_document(doc: dict) -> str:
     for field, label in date_fields:
         if doc.get(field):
             try:
-                dt = datetime.datetime.fromisoformat(str(doc[field]).replace("Z", "+00:00"))
+                dt = datetime.datetime.fromisoformat(
+                    str(doc[field]).replace("Z", "+00:00")
+                )
                 lines.append(f"{label}: {dt.strftime('%d.%m.%Y')}")
             except:
                 lines.append(f"{label}: {doc[field]}")
@@ -219,6 +237,7 @@ def format_full_document(doc: dict) -> str:
         lines.append("Гриф ДСП")
 
     return "\n".join(lines) if lines else "Документ не содержит данных."
+
 
 def create_document_agent_graph():
     workflow = StateGraph(GlobalState)

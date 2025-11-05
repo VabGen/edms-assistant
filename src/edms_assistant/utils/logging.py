@@ -3,6 +3,7 @@ import logging
 import json
 from datetime import datetime
 
+
 class JSONFormatter(logging.Formatter):
     def format(self, record):
         log_obj = {
@@ -14,6 +15,7 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "extra_data"):
             log_obj.update(record.extra_data)
         return json.dumps(log_obj, ensure_ascii=False)
+
 
 def setup_logging():
     handler = logging.StreamHandler()

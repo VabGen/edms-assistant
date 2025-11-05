@@ -1,4 +1,5 @@
 # src/edms_assistant/infrastructure/api_clients/document_client.py
+
 """
 EDMS Document Client — асинхронный клиент для взаимодействия с EDMS API.
 
@@ -6,7 +7,7 @@ EDMS Document Client — асинхронный клиент для взаимо
 Бинарные методы возвращают bytes или AsyncIterator[bytes].
 """
 import httpx
-from typing import Optional, Dict, Any, List, AsyncIterator
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from src.edms_assistant.config.settings import settings
 from src.edms_assistant.utils.retry_utils import async_retry
@@ -19,7 +20,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class DocumentClient:
     """
     Асинхронный клиент для работы с EDMS Document API.
@@ -29,6 +29,7 @@ class DocumentClient:
     - Работу с версиями, историей, адресатами, статусами
     - Выполнение операций (согласование, подписание и т.д.)
     - Загрузку файлов (бинарные методы)
+    - Поиск сотрудников
 
     Безопасность:
     - service_token передаётся только в заголовках
@@ -233,13 +234,18 @@ class DocumentClient:
             "GET", f"api/document/{document_id}/contract-version-info"
         )
 
-        # === Поиск сотрудников (возвращают JSON) ===
+    # === Поиск сотрудников (возвращают JSON) ===
     async def search_employees(self, filter_data: dict) -> Optional[Dict[str, Any]]:
-        """Выполняет поиск сотрудников через POST /api/employee/search."""
+        """
+        Выполняет поиск сотрудников через POST /api/employee/search.
+        Возвращает JSON-ответ от EDMS.
+        """
         return await self._make_request("POST", "api/employee/search", json=filter_data)
 
     async def get_employee_by_id(self, employee_id: UUID) -> Optional[Dict[str, Any]]:
-        """Получить сотрудника по ID. Возвращает JSON."""
+        """
+        Получить сотрудника по ID. Возвращает JSON.
+        """
         return await self._make_request("GET", f"api/employee/{employee_id}")
 
     # === ФАЙЛОВЫЕ МЕТОДЫ (возвращают БАЙТЫ, НЕ JSON) ===
@@ -260,3 +266,11 @@ class DocumentClient:
         except Exception as e:
             logger.error(f"Ошибка загрузки вложения {attachment_id}: {e}")
             return None
+
+    async def get_document_attachments(
+        self, document_id: UUID
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Получить список вложений документа. Возвращает JSON (список).
+        """
+        return await self._make_request("GET", f"api/document/{document_id}/attachment")

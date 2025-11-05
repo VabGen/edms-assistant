@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any
 from uuid import UUID
 
+from edms_assistant.core.tools.add_responsible_tool import add_responsible_to_document_tool
 # Импортируем инструменты
 from src.edms_assistant.core.tools.document_tool import get_document_tool
 from src.edms_assistant.core.tools.attachment_tool import summarize_attachment_tool
@@ -15,23 +16,29 @@ ALL_TOOLS = {
     "get_document_tool": get_document_tool,
     "summarize_attachment_tool": summarize_attachment_tool,
     "find_responsible_tool": find_responsible_tool,
+    "add_responsible_to_document_tool": add_responsible_to_document_tool,
 }
+
 
 class ExecutionService:
     def __init__(self, tools: Dict[str, Any] = None):
         self.tools = tools or ALL_TOOLS
 
-    async def execute_tool(self, tool_name: str, args: Dict[str, Any], user_id: UUID, service_token: str) -> Any:
+    async def execute_tool(
+        self, tool_name: str, args: Dict[str, Any], user_id: UUID, service_token: str
+    ) -> Any:
         # 1. Проверка токена
         if not service_token or len(service_token) < 10:
             raise ValueError("Invalid service_token")
 
         # 2. Санитизация параметров
         args = args.copy()
-        args["service_token"] = service_token  # добавляем токен в аргументы, если нужно
+        args["service_token"] = service_token
 
         # 3. Логирование вызова
-        logger.info(f"User {user_id} executes tool {tool_name} with args {list(args.keys())}")
+        logger.info(
+            f"User {user_id} executes tool {tool_name} with args {list(args.keys())}"
+        )
 
         # 4. Вызов инструмента
         tool = self.tools.get(tool_name)
@@ -40,6 +47,7 @@ class ExecutionService:
 
         result = await tool.ainvoke(args)
         return result
+
 
 # Глобальный экземпляр
 execution_service = ExecutionService()

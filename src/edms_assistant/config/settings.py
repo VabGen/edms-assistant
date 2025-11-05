@@ -66,8 +66,7 @@ class Settings(BaseSettings):
     store_type: str = "memory"
     checkpointer_type: str = "memory"
     checkpointer_postgres_url: Optional[PostgresDsn] = Field(
-        None,
-        description="PostgreSQL DSN для LangGraph Checkpointer (опционально)"
+        None, description="PostgreSQL DSN для LangGraph Checkpointer (опционально)"
     )
     # store_type: str = "memory"
     # checkpointer_type: str = "postgres"

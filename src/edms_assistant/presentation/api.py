@@ -143,16 +143,20 @@ async def assistant_chat(
         "messages": [{"role": "user", "content": message}],
         "uploaded_file_path": str(file_path) if file_path else None,
         "uploaded_file_name": file.filename if file else None,
-        # ✅ поля, которые ожидает orchestrator_planner
         "next_agent": None,
         "agent_input": None,
-        "requires_clarification": None,
+        "requires_clarification": False,
         "sub_agent_result": None,
         "requires_human_input": False,
         "error": None,
         "attachment_id": None,
         "attachment_name": None,
         "current_document": None,
+        # Поля для employee_agent
+        "should_add_responsible_after_clarification": False,
+        "document_id_to_add": None,
+        "selected_candidate_id": None,
+        "next_node": None,
     }
 
     try:

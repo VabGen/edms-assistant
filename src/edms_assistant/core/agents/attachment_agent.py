@@ -29,7 +29,8 @@ async def analyze_and_summarize_node(state: GlobalState) -> dict:
     doc_id_str = agent_input.get("document_id")
 
     logger.info(
-        f"analyze_and_summarize_node: agent_input = {agent_input}, uploaded_file_path = {uploaded_file_path}, doc_id_str = {doc_id_str}")
+        f"analyze_and_summarize_node: agent_input = {agent_input}, uploaded_file_path = {uploaded_file_path}, doc_id_str = {doc_id_str}"
+    )
 
     # === Приоритет 1: Загруженный файл ===
     if uploaded_file_path and os.path.exists(uploaded_file_path):
@@ -43,9 +44,13 @@ async def analyze_and_summarize_node(state: GlobalState) -> dict:
             text = extract_text_from_bytes(file_bytes, clean_filename)
             if text and len(text.strip()) >= 20:
                 summary = await _generate_summary(text, clean_filename)
-                final_summary = f"Содержание вашего файла '{clean_filename}':\n{summary}"
+                final_summary = (
+                    f"Содержание вашего файла '{clean_filename}':\n{summary}"
+                )
             else:
-                final_summary = f"Файл '{clean_filename}' не содержит текста или не поддерживается."
+                final_summary = (
+                    f"Файл '{clean_filename}' не содержит текста или не поддерживается."
+                )
 
         except Exception as e:
             final_summary = f"Не удалось обработать ваш файл: {e}"
@@ -53,13 +58,22 @@ async def analyze_and_summarize_node(state: GlobalState) -> dict:
         return {"messages": [AIMessage(content=final_summary)]}
 
     # === Приоритет 2: Вложение из EDMS ===
-    attachment_keywords = ["вложение", "файл", "приложение", "содержание файла", "приложен"]
+    attachment_keywords = [
+        "вложение",
+        "файл",
+        "приложение",
+        "содержание файла",
+        "приложен",
+    ]
     if doc_id_str and any(kw in user_msg for kw in attachment_keywords):
         try:
             # ✅ Загружаем документ, чтобы получить список вложений
             from src.edms_assistant.core.tools.document_tool import get_document_tool
+
             service_token = state["service_token"]
-            doc_data = await get_document_tool.ainvoke({"document_id": doc_id_str, "service_token": service_token})
+            doc_data = await get_document_tool.ainvoke(
+                {"document_id": doc_id_str, "service_token": service_token}
+            )
 
             if not doc_data or "error" in doc_data:
                 return {"messages": [AIMessage(content="Документ не найден.")]}
@@ -85,12 +99,21 @@ async def analyze_and_summarize_node(state: GlobalState) -> dict:
                 file_bytes = await client.download_attachment(doc_uuid, att_uuid)
 
             if not file_bytes:
-                return {"messages": [
-                    AIMessage(content=f"Не удалось загрузить файл '{target_att.get('name', 'без имени')}'.")]}
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Не удалось загрузить файл '{target_att.get('name', 'без имени')}'."
+                        )
+                    ]
+                }
 
-            text = extract_text_from_bytes(file_bytes, target_att.get("name", "вложение"))
+            text = extract_text_from_bytes(
+                file_bytes, target_att.get("name", "вложение")
+            )
             if text and len(text.strip()) >= 20:
-                summary = await _generate_summary(text, target_att.get("name", "вложение"))
+                summary = await _generate_summary(
+                    text, target_att.get("name", "вложение")
+                )
                 final_summary = f"Содержание вложения '{target_att.get('name', 'без имени')}':\n{summary}"
             else:
                 final_summary = f"Вложение '{target_att.get('name', 'без имени')}' не содержит текста."

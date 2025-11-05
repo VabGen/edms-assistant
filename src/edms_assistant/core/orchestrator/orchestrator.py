@@ -1,34 +1,29 @@
-# src\edms_assistant\system\orchestrator\orchestrator.py
+# src/edms_assistant/core/orchestrator/orchestrator.py
+
 import logging
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage
 from src.edms_assistant.core.state.global_state import GlobalState
 from src.edms_assistant.infrastructure.llm.llm import get_llm
 from src.edms_assistant.core.agents.document_agent import create_document_agent_graph
 from src.edms_assistant.core.agents.attachment_agent import create_attachment_agent_graph
 from src.edms_assistant.core.agents.employee_agent import create_employee_agent_graph
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, \
-    PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, PromptTemplate
 from langgraph.checkpoint.memory import MemorySaver
 
 logger = logging.getLogger(__name__)
 
 llm = get_llm()
 
-
 async def orchestrator_planner(state: GlobalState) -> dict:
-    logger.info(f"orchestrator_planner: full state keys = {list(state.keys())}")
     user_msg = state["user_message"]
     document_id = state.get("document_id")
     uploaded_file_path = state.get("uploaded_file_path")
     current_document = state.get("current_document", "Нет данных о документе.")
 
-    logger.info(
-        f"orchestrator_planner: user_msg={user_msg}, document_id={document_id}, uploaded_file_path={uploaded_file_path}")
+    logger.info(f"orchestrator_planner: user_msg={user_msg}, document_id={document_id}, uploaded_file_path={uploaded_file_path}")
 
     # ✅ Если файл загружен и сообщение про него — направляем в attachment_agent
-    if uploaded_file_path and any(
-            kw in user_msg.lower() for kw in ["файл", "содержимое", "суммируй", "приложение", "вложение"]):
+    if uploaded_file_path and any(kw in user_msg.lower() for kw in ["файл", "содержимое", "суммируй", "приложение", "вложение"]):
         logger.info(f"orchestrator_planner: directing to attachment_agent (file uploaded)")
         return {
             "next_agent": "attachment",
@@ -36,9 +31,11 @@ async def orchestrator_planner(state: GlobalState) -> dict:
             "requires_clarification": False
         }
 
-    # ✅ Если document_id есть и сообщение *может* относиться к вложению — направляем в attachment_agent
+    # ✅ Если document_id есть И (в сообщении есть ключевые слова ИЛИ пользователь спрашивает про ВЛОЖЕНИЕ) — направляем в attachment_agent
     attachment_keywords = [
         "вложение", "файл", "приложение", "содержание файла", "приложен",
+        "о чем вложение", "что в вложении", "содержимое вложения", "суммируй вложение", "опиши вложение",
+        "содержание вложения", "вложения", "прикрепленный", "прикреплённый", "pdf", "docx", "txt",
         "о чем вложение", "что в вложении", "содержимое вложения", "суммируй вложение", "опиши вложение"
     ]
     if document_id and any(kw in user_msg.lower() for kw in attachment_keywords):
@@ -50,41 +47,58 @@ async def orchestrator_planner(state: GlobalState) -> dict:
         }
 
     # ✅ Если в сообщении упоминается "документ" и есть document_id — направляем в document_agent
-    if "документ" in user_msg.lower() and document_id:
-        logger.info(f"orchestrator_planner: directing to document_agent")
+    document_keywords = [
+        "статус", "реквизиты", "содержание", "о чем документ", "кто автор", "дата создания",
+        "номер", "дата регистрации", "подписан", "согласован", "исполнитель", "профиль"
+    ]
+    is_about_doc_content = any(kw in user_msg.lower() for kw in document_keywords)
+    is_about_attachment = any(kw in user_msg.lower() for kw in attachment_keywords)
+    if "документ" in user_msg.lower() and document_id and not is_about_attachment and is_about_doc_content:
+        logger.info(f"orchestrator_planner: directing to document_agent (document keywords + not attachment)")
         return {
             "next_agent": "document",
             "agent_input": {"document_id": document_id},
             "requires_clarification": False
         }
 
-    # ✅ Если в сообщении упоминается поиск сотрудника — направляем в employee_agent
+    # ✅ Если в сообщении упоминается поиск/добавление сотрудника — направляем в employee_agent
     employee_keywords = [
-        "специалист", "найди", "добавь", "ответственный", "сотрудник", "поиск", "искать", "найти", "выбери"
+        "специалист", "найди", "добавь", "ответственный", "сотрудник", "поиск", "искать", "найти", "выбери", "кто"
     ]
-    # Проверим, есть ли фамилия (или слово, начинающееся с заглавной буквы) и одно из ключевых слов
     import re
     words = user_msg.split()
     has_surname = any(w.istitle() and len(w) > 2 for w in words)  # например, Иванов
+
+    # ✅ Проверим, нужно ли добавлять
+    add_keywords = ["добавь", "в документ", "включить", "включить в", "добавить в"]
+    should_add_flag = document_id and any(kw in user_msg.lower() for kw in add_keywords)
+
     if any(kw in user_msg.lower() for kw in employee_keywords) and has_surname:
         logger.info(f"orchestrator_planner: directing to employee_agent (employee keywords + surname)")
         # Попробуем извлечь фамилию
         pattern = r'\b([А-ЯЁ][а-яё]+)\b'
         matches = re.findall(pattern, user_msg)
         surname = next((m for m in matches if len(m) > 2), None)
+        agent_input_dict = {}
         if surname:
-            return {
-                "next_agent": "employee",
-                "agent_input": {"last_name": surname},  # ✅ Передаём фамилию
-                "requires_clarification": False
-            }
-        else:
-            # Если фамилию не удалось извлечь — всё равно направим, пусть инструмент сам решит
-            return {
-                "next_agent": "employee",
-                "agent_input": {},
-                "requires_clarification": False
-            }
+            agent_input_dict["last_name"] = surname
+        if document_id:
+            agent_input_dict["document_id"] = document_id
+
+        # ✅ Возвращаем обновления state для employee_agent
+        state_updates = {
+            "next_agent": "employee",
+            "agent_input": agent_input_dict,
+            "requires_clarification": False
+        }
+
+        # ✅ Если нужно добавить — устанавливаем флаги в state
+        if should_add_flag and document_id:
+            state_updates["should_add_responsible_after_clarification"] = True
+            state_updates["document_id_to_add"] = document_id
+            logger.info(f"orchestrator_planner - should_add_flag: {state_updates}")
+
+        return state_updates
 
     # Если не сработало, используем LLM
     system_template = """
@@ -105,9 +119,6 @@ async def orchestrator_planner(state: GlobalState) -> dict:
 - next_agent: "document" / "attachment" / "employee" / "default"
 - agent_input: {{"document_id": "..."}} если нужен документ, иначе {{}}
 """
-
-    from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate, \
-        PromptTemplate
 
     system_prompt = PromptTemplate.from_template(system_template)
     system_message_prompt = SystemMessagePromptTemplate(prompt=system_prompt)
@@ -149,7 +160,6 @@ async def orchestrator_planner(state: GlobalState) -> dict:
         "requires_clarification": requires_clarification
     }
 
-
 async def route_to_agent(state: GlobalState) -> str:
     next_agent = state.get("next_agent")
     if next_agent:
@@ -157,7 +167,6 @@ async def route_to_agent(state: GlobalState) -> str:
         return next_agent
     logger.info("route_to_agent: no next_agent found, returning 'default'")
     return "default"
-
 
 def create_orchestrator_graph():
     workflow = StateGraph(GlobalState)
