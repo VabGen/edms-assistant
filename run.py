@@ -7,7 +7,7 @@ import atexit
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
-from edms_assistant.presentation.api import app
+from src.edms_assistant.presentation.api import app
 from src.edms_assistant.config.settings import settings
 
 load_dotenv()
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "edms_assistant.presentation.api:app",
+        "src.edms_assistant.presentation.api:app",
         host="127.0.0.1",
         port=8000,
         reload=True,

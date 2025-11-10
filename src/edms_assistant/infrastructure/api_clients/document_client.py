@@ -20,6 +20,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class DocumentClient:
     """
     Асинхронный клиент для работы с EDMS Document API.
