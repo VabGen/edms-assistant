@@ -4,7 +4,6 @@ import logging
 from dotenv import load_dotenv
 from src.edms_assistant.utils.logging import setup_logging
 from src.edms_assistant.config.settings import settings
-from src.edms_assistant.agents.agent import create_agent_graph
 from src.edms_assistant.presentation.api import app
 
 load_dotenv()
