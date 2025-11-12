@@ -1,5 +1,9 @@
+# src/edms_assistant/agents/employee_agent.py
+
 from typing import Dict, Any
-from langchain_core.messages import HumanMessage, AIMessage
+import re
+from langchain_core.messages import HumanMessage, AIMessage  # ✅ Импортируем для типизации
+from langgraph.types import interrupt  # ✅ Импортируем interrupt
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.registry import BaseAgent
 from src.edms_assistant.tools.employee import (
@@ -17,50 +21,19 @@ class EmployeeAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.llm = get_llm()
+        # Инициализируем инструменты для работы с сотрудниками
         self.tools = [
             get_employee_by_id_tool,
             find_responsible_tool,
             add_responsible_to_document_tool,
         ]
 
-    # В классе EmployeeAgent добавим метод:
-    async def process_with_selection(self, state: GlobalState, selected_number: int) -> Dict[str, Any]:
-        """Обработка выбора сотрудника из списка (для уточнений)"""
-        # Получаем кандидатов из предыдущего контекста
-        # В правильной реализации это будет из памяти LangGraph
-        # Но для простоты пока используем clarification_context из состояния
-        if hasattr(state, 'clarification_context') and state.clarification_context:
-            candidates = state.clarification_context.get('candidates', [])
-            if candidates and 1 <= selected_number <= len(candidates):
-                selected_candidate = candidates[selected_number - 1]
-
-                # Получаем полную информацию о выбранном сотруднике
-                tool_input = {
-                    "employee_id": selected_candidate["id"],
-                    "service_token": state.service_token
-                }
-                employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
-
-                return {
-                    "messages": [
-                        f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}"],
-                    "requires_execution": False,
-                    "requires_clarification": False
-                }
-
-        return {
-            "messages": ["Пожалуйста, укажите корректный номер из списка."],
-            "requires_execution": False,
-            "requires_clarification": False
-        }
-
     async def process(self, state: GlobalState, **kwargs) -> Dict[str, Any]:
-        """Обработка запроса к сотрудникам (обычная логика)"""
+        """Обработка запроса к сотрудникам"""
         try:
             user_message = state.user_message
 
-            # Проверяем, есть ли в сообщении что-то связанное с ID сотрудника
-            import re
+            # Проверяем, является ли сообщение UUID сотрудника
             uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
             employee_ids = re.findall(uuid_pattern, user_message.lower())
 
@@ -73,8 +46,39 @@ class EmployeeAgent(BaseAgent):
                 }
                 employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
                 return {
-                    "messages": [HumanMessage(content=user_message),
-                                 AIMessage(content=employee_result)],
+                    "messages": [user_message, employee_result],  # ✅ Только строки!
+                    "requires_execution": False,
+                    "requires_clarification": False
+                }
+
+            # Проверяем, является ли сообщение числовым уточнением (например, "2")
+            if user_message.strip().isdigit():
+                selected_number = int(user_message.strip())
+
+                # Проверяем, есть ли в состоянии предыдущий контекст уточнения
+                if hasattr(state, 'clarification_context') and state.clarification_context:
+                    candidates = state.clarification_context.get('candidates', [])
+                    if candidates and 1 <= selected_number <= len(candidates):
+                        selected_candidate = candidates[selected_number - 1]
+
+                        # Получаем информацию о выбранном сотруднике
+                        tool_input = {
+                            "employee_id": selected_candidate["id"],
+                            "service_token": state.service_token
+                        }
+                        employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
+
+                        return {
+                            "messages": [user_message,
+                                         f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}"],
+                            # ✅ Только строки!
+                            "requires_execution": False,
+                            "requires_clarification": False
+                        }
+
+                # Если не удалось обработать выбор - возвращаем сообщение об ошибке
+                return {
+                    "messages": [user_message, "Пожалуйста, укажите корректный номер из списка."],  # ✅ Только строки!
                     "requires_execution": False,
                     "requires_clarification": False
                 }
@@ -104,36 +108,32 @@ class EmployeeAgent(BaseAgent):
 
                         if "error" in search_data:
                             return {
-                                "messages": [HumanMessage(content=user_message),
-                                             AIMessage(content=f"Ошибка поиска: {search_data['error']}")],
+                                "messages": [user_message, f"Ошибка поиска: {search_data['error']}"],
+                                # ✅ Только строки!
                                 "requires_execution": False,
                                 "requires_clarification": False
                             }
 
                         # Проверяем, есть ли найденные сотрудники
                         if isinstance(search_data, list) and len(search_data) > 0:
-                            # Если найдено несколько сотрудников - вызываем прерывание
+                            # Если найдено несколько сотрудников - ВЫЗЫВАЕМ ПРЕРЫВАНИЕ LANGGRAPH
                             if len(search_data) > 1:
-                                # 🔴 ПРЕРЫВАНИЕ: нужно уточнение
-                                return {
-                                    "messages": [HumanMessage(content=user_message)],
-                                    "requires_execution": False,
-                                    "requires_clarification": True,
-                                    "clarification_context": {
-                                        "type": "employee_selection",
-                                        "candidates": search_data,
-                                        "original_query": name_components,
-                                        "message": f"Найдено несколько сотрудников с фамилией {name_components.get('last_name', '')}. Пожалуйста, уточните, о ком именно вы спрашиваете."
-                                    }
-                                }
+                                # 🔴 ВАЖНО: используем interrupt() как в документации LangChain
+                                # Но НЕ возвращаем объекты LangChain, только данные
+                                return interrupt({
+                                    "type": "clarification",
+                                    "candidates": search_data,
+                                    "original_query": name_components,
+                                    "message": f"Найдено несколько сотрудников с фамилией {name_components.get('last_name', '')}. Пожалуйста, уточните, о ком именно вы спрашиваете."
+                                })
                             else:
                                 # Если найден один сотрудник - возвращаем его данные
                                 employee_info = search_data[0]
                                 full_name = f"{employee_info.get('last_name', '')} {employee_info.get('first_name', '')} {employee_info.get('middle_name', '')}".strip()
                                 return {
-                                    "messages": [HumanMessage(content=user_message),
-                                                 AIMessage(
-                                                     content=f"Найден сотрудник: {full_name}, ID: {employee_info.get('id')}")],
+                                    "messages": [user_message,
+                                                 f"Найден сотрудник: {full_name}, ID: {employee_info.get('id')}"],
+                                    # ✅ Только строки!
                                     "requires_execution": False,
                                     "requires_clarification": False
                                 }
@@ -141,23 +141,22 @@ class EmployeeAgent(BaseAgent):
                             # Если ничего не найдено
                             query_desc = ", ".join([f"{k}: {v}" for k, v in name_components.items() if v])
                             return {
-                                "messages": [HumanMessage(content=user_message),
-                                             AIMessage(
-                                                 content=f"Сотрудников с параметрами '{query_desc}' не найдено.")],
+                                "messages": [user_message, f"Сотрудников с параметрами '{query_desc}' не найдено."],
+                                # ✅ Только строки!
                                 "requires_execution": False,
                                 "requires_clarification": False
                             }
                     except json.JSONDecodeError:
                         return {
-                            "messages": [HumanMessage(content=user_message),
-                                         AIMessage(content=f"Ошибка обработки результата поиска: {search_result}")],
+                            "messages": [user_message, f"Ошибка обработки результата поиска: {search_result}"],
+                            # ✅ Только строки!
                             "requires_execution": False,
                             "requires_clarification": False
                         }
                 else:
                     # Если не удалось извлечь имя, возвращаем сообщение о необходимости уточнения
                     return {
-                        "messages": [HumanMessage(content=user_message)],
+                        "messages": [user_message],  # ✅ Только строки!
                         "requires_execution": False,
                         "requires_clarification": True,
                         "clarification_context": {
@@ -168,7 +167,7 @@ class EmployeeAgent(BaseAgent):
 
             # По умолчанию - возвращаем сообщение о необходимости уточнения
             return {
-                "messages": [HumanMessage(content=user_message)],
+                "messages": [user_message],  # ✅ Только строки!
                 "requires_execution": False,
                 "requires_clarification": True,
                 "clarification_context": {
@@ -180,8 +179,7 @@ class EmployeeAgent(BaseAgent):
         except Exception as e:
             error_msg = f"Ошибка обработки сотрудника: {str(e)}"
             return {
-                "messages": [HumanMessage(content=user_message),
-                             AIMessage(content=error_msg)],
+                "messages": [user_message, error_msg],  # ✅ Только строки!
                 "requires_execution": False,
                 "requires_clarification": False,
                 "error": str(e)
@@ -213,6 +211,7 @@ class EmployeeAgent(BaseAgent):
             ])
 
             response_content = str(response.content)
+            # Парсим JSON ответа
             import json as json_module
             extracted_data = json_module.loads(response_content)
 

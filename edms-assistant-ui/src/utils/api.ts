@@ -5,17 +5,35 @@ import axios from 'axios';
 const API_BASE = 'http://127.0.0.1:8000';
 
 export interface ChatResponse {
-  response: string;
+  response?: string;
   requires_clarification?: boolean;
-  thread_id?: string;
+  clarification_type?: string;
   candidates?: Array<{
     id: string;
     last_name: string;
     first_name: string;
     middle_name: string;
-    department: string;
-    post: string;
+    department?: string;
+    post?: string;
   }>;
+  candidates_list?: string;
+  thread_id?: string;
+  __interrupt__?: {  // ✅ Поле для прерывания LangGraph
+    value: {
+      type: string;
+      candidates: Array<{
+        id: string;
+        last_name: string;
+        first_name: string;
+        middle_name: string;
+        department?: string;
+        post?: string;
+      }>;
+      original_query?: Record<string, any>;
+      message: string;
+    };
+    timestamp: string;
+  };
 }
 
 export const sendMessage = async (
@@ -25,16 +43,15 @@ export const sendMessage = async (
   documentId?: string,
   file?: File,
   threadId?: string,
-  selectedCandidateId?: string
+  // selectedCandidateId?: string
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('user_id', userId);
   formData.append('service_token', serviceToken);
-  if (message) formData.append('message', message);
+  if (message) formData.append('user_message', message);
   if (documentId) formData.append('document_id', documentId);
   if (file) formData.append('file', file);
   if (threadId) formData.append('thread_id', threadId);
-  if (selectedCandidateId) formData.append('selected_candidate_id', selectedCandidateId);
 
   const res = await axios.post<ChatResponse>(
     `${API_BASE}/chat`,
@@ -46,7 +63,20 @@ export const sendMessage = async (
     }
   );
 
-  return res.data;
+  // ✅ Преобразуем __interrupt__ в формат уточнения для фронтенда
+  const data = res.data;
+  if (data.__interrupt__) {
+    return {
+      ...data,
+      requires_clarification: true,
+      clarification_type: "employee_selection",
+      candidates: data.__interrupt__.value.candidates,
+      candidates_list: data.__interrupt__.value.message,
+      response: data.__interrupt__.value.message
+    };
+  }
+
+  return data;
 };
 
 // Для потоковой передачи

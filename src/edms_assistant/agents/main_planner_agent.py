@@ -1,5 +1,8 @@
-from typing import Dict, Any, List
+# src/edms_assistant/agents/main_planner_agent.py
+
+from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langgraph.types import interrupt
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.registry import BaseAgent, agent_registry
 from src.edms_assistant.infrastructure.llm.llm import get_llm
@@ -15,7 +18,7 @@ class MainPlannerAgent(BaseAgent):
         self.tools = []
 
     def _clean_result_for_json(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Очищает результат для JSON сериализации"""
+        """Очищает результат для JSON сериализации (убирает объекты LangChain)"""
         if not isinstance(result, dict):
             return {"raw_result": str(result)}
 
@@ -39,59 +42,63 @@ class MainPlannerAgent(BaseAgent):
         return cleaned
 
     async def process(self, state: GlobalState, **kwargs) -> Dict[str, Any]:
-        """Основной процесс: проверяем уточнение -> планирование -> выполнение -> ответ"""
+        """Основной процесс: планирование -> выполнение -> ответ"""
         try:
             user_message = state.user_message
 
-            # ПРОВЕРКА: если есть предыдущий контекст уточнения, обрабатываем его
-            if state.clarification_context:
-                clarification_type = state.clarification_context.get("type")
+            # Проверяем, является ли сообщение числовым уточнением (например, "2")
+            if user_message.strip().isdigit() and hasattr(state,
+                                                          'clarification_context') and state.clarification_context:
+                # Это уточнение - передаем в employee_agent напрямую
+                employee_agent = agent_registry.get_agent_instance("employee_agent")
+                if employee_agent:
+                    result = await employee_agent.process(state)
 
-                # Если это выбор сотрудника и сообщение - число
-                if clarification_type == "employee_selection" and user_message.strip().isdigit():
-                    # Это уточнение - передаем в employee_agent напрямую
-                    employee_agent = agent_registry.get_agent_instance("employee_agent")
-                    if employee_agent:
-                        result = await employee_agent.process(state, **kwargs)
+                    # Если результат требует уточнения - возвращаем его как есть
+                    if result.get("requires_clarification", False):
                         return result
 
-            # 1. Формируем план действий (если нет уточнения)
+                    # Очищаем результат для JSON сериализации
+                    cleaned_result = self._clean_result_for_json(result)
+                    return cleaned_result
+
+            # Формируем план действий (если это не уточнение)
             plan = await self.plan_actions(state)
 
-            # 2. Выполняем план (запускаем агентов)
+            # Выполняем план (запускаем агентов)
             results = await self.execute_plan(plan, state)
 
             # Проверяем, есть ли результаты с уточнением
             for result in results:
                 if result.get("requires_clarification", False):
                     clarification_context = result.get("clarification_context", {})
-                    # ВАЖНО: возвращаем результат с уточнением, а не формируем ответ через LLM
-                    return {
-                        "messages": [HumanMessage(content=user_message)],
-                        "requires_execution": False,
-                        "requires_clarification": True,
-                        "clarification_context": clarification_context,
-                        "plan": plan,
-                        "results": result
-                    }
+                    if clarification_context.get("type") == "employee_selection":
+                        candidates = clarification_context.get("candidates", [])
+                        if candidates:
+                            # 🔴 ПРЕРЫВАНИЕ: нужно уточнение (согласно документации LangChain)
+                            # ВАЖНО: возвращаем только данные, не объекты LangChain
+                            return interrupt({
+                                "type": "clarification",
+                                "candidates": candidates,
+                                "original_query": clarification_context.get("original_query", {}),
+                                "message": clarification_context.get("message", "Уточните выбор кандидата")
+                            })
 
-            # 3. Формируем финальный ответ
+            # Формируем финальный ответ
             final_response = await self.generate_final_response(user_message, plan, results)
 
             return {
-                "messages": [HumanMessage(content=user_message),
-                             AIMessage(content=final_response)],
+                "messages": [user_message, final_response],  # ✅ Только строки!
                 "requires_execution": False,
                 "requires_clarification": False,
                 "plan": plan,
-                "results": results
+                "results": self._clean_result_for_json(results)  # ✅ Очищаем результаты
             }
 
         except Exception as e:
             error_msg = f"Ошибка планирования: {str(e)}"
             return {
-                "messages": [HumanMessage(content=state.user_message),
-                             AIMessage(content=error_msg)],
+                "messages": [state.user_message, error_msg],  # ✅ Только строки!
                 "requires_execution": False,
                 "requires_clarification": False,
                 "error": str(e)
@@ -162,7 +169,7 @@ class MainPlannerAgent(BaseAgent):
                     "reasoning": "По умолчанию"
                 }
 
-    async def execute_plan(self, plan: Dict[str, Any], state: GlobalState) -> List[Dict[str, Any]]:
+    async def execute_plan(self, plan: Dict[str, Any], state: GlobalState) -> list:
         """Выполняет план действий - запускает агентов через registry"""
         results = []
 
@@ -176,6 +183,7 @@ class MainPlannerAgent(BaseAgent):
             if agent:
                 try:
                     # Обновляем состояние, если нужно
+                    # В данном случае передаем оригинальное состояние
                     result = await agent.process(state)
 
                     # Проверяем, требует ли результат уточнения
@@ -214,8 +222,7 @@ class MainPlannerAgent(BaseAgent):
 
         return results
 
-    async def generate_final_response(self, user_message: str, plan: Dict[str, Any],
-                                      results: List[Dict[str, Any]]) -> str:
+    async def generate_final_response(self, user_message: str, plan: Dict[str, Any], results: list) -> str:
         """Формирует финальный ответ на основе результатов агентов"""
         # Проверяем, есть ли результаты с уточнением
         for result in results:

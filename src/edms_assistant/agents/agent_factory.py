@@ -1,16 +1,19 @@
+# src/edms_assistant/agents/agent_factory.py
+
 from src.edms_assistant.core.registry import agent_registry
 from src.edms_assistant.agents.main_planner_agent import MainPlannerAgent
-from src.edms_assistant.agents.document_agent import DocumentAgent
 from src.edms_assistant.agents.employee_agent import EmployeeAgent
+from src.edms_assistant.agents.document_agent import DocumentAgent
 from src.edms_assistant.agents.attachment_agent import AttachmentAgent
 
 
 def register_all_agents():
     """Регистрация всех доступных агентов"""
+    # Регистрируем основной планирующий агент
     agent_registry.register("main_planner_agent", MainPlannerAgent)
-
-    agent_registry.register("document_agent", DocumentAgent)
+    # Регистрируем специализированные агенты
     agent_registry.register("employee_agent", EmployeeAgent)
+    agent_registry.register("document_agent", DocumentAgent)
     agent_registry.register("attachment_agent", AttachmentAgent)
 
 

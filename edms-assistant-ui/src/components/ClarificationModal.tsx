@@ -22,7 +22,7 @@ const ClarificationModal: React.FC<Props> = ({
           {candidates?.map((c) => (
             <li key={c.id}>
               <button
-                onClick={() => onSelect(c.id)}
+                onClick={() => onSelect(c.id)} // ✅ Передаем ID сотрудника
                 className="w-full text-left px-4 py-2 hover:bg-gray-700 rounded-xl transition-colors duration-300"
               >
                 {c.last_name} {c.first_name} {c.middle_name}

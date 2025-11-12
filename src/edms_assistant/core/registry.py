@@ -3,24 +3,30 @@ from typing import Dict, Type, Any, Optional, List
 from langchain_core.tools import BaseTool
 from src.edms_assistant.infrastructure.llm.llm import get_llm
 
+# src/edms_assistant/core/registry.py
 
-class BaseAgent:
+from abc import ABC, abstractmethod
+from typing import Dict, Any
+
+
+class BaseAgent(ABC):
     """Базовый класс для всех агентов — содержит методы для получения инструментов и выполнения"""
 
     def __init__(self):
-        self.tools: List[BaseTool] = []
-        self.llm = get_llm()
+        self.tools = []
+        self.llm = None
 
-    def get_tools(self) -> List[BaseTool]:
-        """Возвращает список инструментов для агента"""
-        return self.tools
-
+    @abstractmethod
     async def process(self, state: Any, **kwargs) -> Dict[str, Any]:
-        """Обработка запроса — должен быть реализован в дочерних классах"""
+        """Обработка запроса агентом - должен быть реализован в дочерних классах"""
         raise NotImplementedError("Метод process должен быть реализован в дочернем классе")
 
+    def get_tools(self) -> list:
+        """Возвращает инструменты для агента"""
+        return self.tools
+
     def set_llm(self, llm):
-        """Установка LLM для агента"""
+        """Устанавливает LLM для агента"""
         self.llm = llm
 
 
