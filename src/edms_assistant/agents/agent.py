@@ -6,11 +6,10 @@ from langgraph.pregel import Pregel
 from langgraph.types import Command
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.registry import agent_registry
-from src.edms_assistant.core.middleware.hitl_middleware import HumanInTheLoopMiddleware
 
 
 def create_agent_graph():
-    """Создание production-grade графа агента с поддержкой HITL и прерываний"""
+    """Создание production-grade графа агента с универсальным прерыванием и постоянным хранилищем"""
 
     # Создаем граф с типизированным состоянием
     graph = StateGraph(GlobalState)
@@ -55,96 +54,57 @@ def create_agent_graph():
         result = await attachment_agent.process(state)
         return result
 
-    # Узел уточнения
-    async def clarification_node(state: GlobalState) -> Dict[str, Any]:
-        """Узел обработки уточнений от пользователя"""
-        # Если это числовое уточнение - передаем в employee_agent
-        if state.user_message.strip().isdigit() and state.clarification_context:
-            employee_agent = agent_registry.get_agent_instance("employee_agent")
-            if employee_agent:
-                result = await employee_agent.process(state)
-                return result
-
-        # По умолчанию возвращаем к планированию
-        planner_agent = agent_registry.get_agent_instance("main_planner_agent")
-        if planner_agent:
-            result = await planner_agent.process(state)
-            return result
-
-        return {"error": "Clarification processing failed"}
-
-    # Узел HITL - обработка решений пользователя
-    async def hitl_node(state: GlobalState) -> Dict[str, Any]:
-        """Узел обработки решений HITL"""
-        if state.hitl_pending and state.hitl_request:
-            # Здесь обрабатываем решения пользователя
-            # и возобновляем выполнение с командами
-            decisions = state.hitl_decisions
-            if decisions:
-                # Формируем команду для возобновления
-                return {"__interrupt__": Command(resume={"decisions": decisions})}
-
-        return {}
-
     # Добавляем все узлы
     graph.add_node("planning", planning_node)
     graph.add_node("document", document_node)
     graph.add_node("employee", employee_node)
     graph.add_node("attachment", attachment_node)
-    graph.add_node("clarification", clarification_node)
-    graph.add_node("hitl", hitl_node)
 
     # Устанавливаем точку входа
     graph.add_edge(START, "planning")
 
     # Добавляем переходы с условиями
-    def should_clarify(state: GlobalState) -> str:
-        """Определяет, требуется ли уточнение"""
-        if state.requires_clarification:
-            return "clarification"
-        elif state.hitl_pending:
-            return "hitl"
+    def route_after_planning(state: GlobalState) -> str:
+        """Маршрутизация после планирования"""
+        # В простом случае всегда идем к employee, можно улучшить
+        # Проверяем, есть ли документ_id или другие критерии
+        if state.document_id:
+            return "document"
+        elif state.uploaded_file_path:
+            return "attachment"
         else:
-            return "document"  # по умолчанию идем к обработке документов
+            return "employee"
 
-    def route_after_clarification(state: GlobalState) -> str:
-        """Маршрутизация после уточнения"""
-        if state.next_node_after_clarification:
-            return state.next_node_after_clarification
-        return "planning"
+    def route_after_employee(state: GlobalState) -> str:
+        """Маршрутизация после обработки сотрудника"""
+        # После обработки сотрудника завершаем или возвращаемся к планированию
+        return END
 
     # Добавляем условные переходы
     graph.add_conditional_edges(
         "planning",
-        should_clarify,
-        {"clarification": "clarification", "hitl": "hitl", "document": "document"},
+        route_after_planning,
+        {"employee": "employee", "document": "document", "attachment": "attachment"}
     )
 
     graph.add_conditional_edges(
-        "clarification",
-        route_after_clarification,
-        {
-            "document": "document",
-            "employee": "employee",
-            "attachment": "attachment",
-            "planning": "planning",
-        },
+        "employee",
+        route_after_employee,
+        {END: END, "planning": "planning"}
     )
 
     # Прямые переходы между узлами
     graph.add_edge("document", END)
-    graph.add_edge("employee", END)
     graph.add_edge("attachment", END)
-    graph.add_edge("hitl", "planning")
 
-    # Используем MemorySaver для хранения состояния
+    # Используем MemorySaver как постоянное хранилище (в проде использовать AsyncPostgresSaver)
     checkpointer = MemorySaver()
 
-    # Компилируем граф с HITL middleware
+    # Компилируем граф с checkpointer - это позволяет использовать прерывания
     compiled_graph = graph.compile(
         checkpointer=checkpointer,
-        interrupt_before=["clarification", "hitl"],  # Прерывания перед этими узлами
-        interrupt_after=["planning"],  # Прерывания после планирования при необходимости
+        # Убираем interrupt_before и interrupt_after, т.к. прерывания теперь происходят внутри узлов
+        # LangGraph автоматически обрабатывает interrupt через checkpointer
     )
 
     return compiled_graph

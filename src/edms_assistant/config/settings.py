@@ -11,7 +11,7 @@ class VLLMConfig(BaseModel):
         description="Base URL for generative model API"
     )
     generative_model: str = Field(
-        default="Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",
+        default="generative-model",  # Обновлено на актуальное имя
         description="Generative model identifier"
     )
     embedding_base_url: HttpUrl = Field(
@@ -118,13 +118,17 @@ class Settings(BaseSettings):
     )
 
     # Storage & Checkpointing
-    store_type: Literal["memory", "sqlite"] = Field(
-        default="memory",
+    store_type: Literal["memory", "sqlite", "postgres"] = Field(
+        default="memory",  # Для продакшена использовать postgres
         description="Type of state storage to use"
     )
-    checkpointer_type: Literal["memory", "sqlite"] = Field(
-        default="memory",
+    checkpointer_type: Literal["memory", "sqlite", "postgres"] = Field(
+        default="memory",  # Для продакшена использовать postgres
         description="Type of checkpoint storage to use"
+    )
+    postgres_connection_string: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL connection string for persistent storage"
     )
 
     model_config = {

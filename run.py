@@ -24,7 +24,7 @@ logging.basicConfig(
     level=getattr(logging, log_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/edms_assistant.log"),  # ✅ Теперь директория точно существует
+        logging.FileHandler("logs/edms_assistant.log"),
         logging.StreamHandler()
     ]
 )
@@ -50,12 +50,15 @@ def cleanup_temp_dir():
 atexit.register(cleanup_temp_dir)
 
 if __name__ == "__main__":
-    print("Starting EDMS Assistant with security features...")
+    print("Starting EDMS Assistant with universal interrupt system...")
     print(f"Security enabled: JWT, RBAC, parameter sanitization")
     print(f"API available at: http://127.0.0.1:8000")
     print(f"Health check: http://127.0.0.1:8000/health")
     print(f"Store type: {settings.store_type}")
     print(f"Checkpointer type: {settings.checkpointer_type}")
+
+    if settings.checkpointer_type == "postgres":
+        print(f"PostgreSQL connection: {settings.postgres_connection_string}")
 
     # Запуск приложения
     uvicorn_run(
@@ -68,7 +71,6 @@ if __name__ == "__main__":
         timeout_keep_alive=300,
         loop="asyncio",
         http="auto",
-        # Добавляем безопасные настройки
         forwarded_allow_ips="*",
         proxy_headers=True
     )

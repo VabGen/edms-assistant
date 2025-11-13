@@ -11,6 +11,7 @@ import logging
 from langchain_core.messages import HumanMessage, AIMessage
 from starlette.middleware.cors import CORSMiddleware
 from langgraph.types import Command
+from langgraph.types import Interrupt  # Импортируем Interrupt
 
 from src.edms_assistant.agents.agent import create_agent_graph
 from src.edms_assistant.core.state import GlobalState
@@ -53,23 +54,14 @@ async def chat_endpoint(
         agent_type: str = Form("main_planner_agent", description="Тип агента для обработки"),
         thread_id: Optional[str] = Form(None, description="ID диалога для продолжения"),
         file: Optional[UploadFile] = File(None, description="Файл для обработки"),
-        # используем токен только для проверки валидности
         user_info: dict = Depends(verify_and_extract_user_info)  # Получаем информацию из токена
 ):
     """
-    Основной эндпоинт чата с поддержкой:
+    Универсальный эндпоинт чата с поддержкой:
     - EDMS аутентификации
     - Загрузки файлов
-    - Прерываний HITL
+    - Прерываний (уточнений и HITL) с универсальным обработчиком
     """
-
-    # Проверяем валидность токена (проверка в verify_and_extract_user_info)
-    # Но используем user_id из формы, а не из токена (т.к. токен может быть не JWT)
-    # Вместо проверки совпадения, просто проверим, что токен валидный
-    if user_info.get("token") != edms_token:
-        # Это означает, что токен из заголовка не совпадает с токеном из формы
-        # В реальном приложении может потребоваться другая логика
-        pass
 
     # Валидация thread_id
     if thread_id:
@@ -114,16 +106,45 @@ async def chat_endpoint(
     try:
         # Запуск графа агента
         agent_graph = create_agent_graph()
-        result = await agent_graph.ainvoke(initial_state, config=config)
 
-        # Проверка прерываний HITL
-        if "__interrupt__" in result:
-            interrupt_data = result["__interrupt__"]
-            if isinstance(interrupt_data, list) and len(interrupt_data) > 0:
-                hitl_request = interrupt_data[0].value
+        # ПЕРЕХВАТЫВАЕМ Interrupt ИСКЛЮЧЕНИЕ - УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК
+        try:
+            result = await agent_graph.ainvoke(initial_state, config=config)
+        except Interrupt as e:
+            # Если произошло прерывание, возвращаем информацию клиенту
+            interrupt_value = e.value
+            interrupt_type = interrupt_value.get("type", "")
+
+            if interrupt_type == "employee_selection":
+                candidates = interrupt_value.get("candidates", [])
+                message = interrupt_value.get("message", "Требуется выбор сотрудника")
+
+                return {
+                    "requires_clarification": True,
+                    "clarification_type": "employee_selection",
+                    "message": message,
+                    "candidates": candidates,
+                    "thread_id": config["configurable"]["thread_id"],
+                    "status": "awaiting_selection"
+                }
+            elif interrupt_type == "document_selection":
+                # Пример для документа
+                documents = interrupt_value.get("documents", [])
+                message = interrupt_value.get("message", "Требуется выбор документа")
+
+                return {
+                    "requires_clarification": True,
+                    "clarification_type": "document_selection",
+                    "message": message,
+                    "documents": documents,
+                    "thread_id": config["configurable"]["thread_id"],
+                    "status": "awaiting_selection"
+                }
+            elif interrupt_type == "hitl_decision":
+                # Это прерывание для HITL решения
                 return {
                     "requires_hitl_decision": True,
-                    "hitl_request": hitl_request,
+                    "hitl_request": interrupt_value,
                     "thread_id": config["configurable"]["thread_id"],
                     "user_info": {
                         "user_id": user_info["user_id"],
@@ -131,8 +152,21 @@ async def chat_endpoint(
                     },
                     "status": "awaiting_decision"
                 }
+            else:
+                # Неизвестный тип прерывания - универсальный обработчик
+                message = interrupt_value.get("message", "Требуется уточнение")
 
-        # Возвращаем финальный ответ
+                return {
+                    "requires_clarification": True,
+                    "clarification_type": "generic",
+                    "message": message,
+                    "interrupt_value": interrupt_value,  # Возвращаем полное значение для гибкости
+                    "thread_id": config["configurable"]["thread_id"],
+                    "status": "awaiting_input"
+                }
+
+        # Если interrupt не произошло, обрабатываем обычный результат
+        # Возвращаем финальный ответ (если выполнение завершилось без прерывания)
         final_messages = result.get("messages", [])
         if final_messages:
             last_ai_message = [m for m in final_messages if isinstance(m, AIMessage)]
@@ -145,6 +179,7 @@ async def chat_endpoint(
 
         return {
             "response": response_text,
+            "requires_clarification": False,
             "requires_hitl_decision": False,
             "thread_id": config["configurable"]["thread_id"],
             "status": "completed"
@@ -157,21 +192,18 @@ async def chat_endpoint(
 
 @app.post("/resume")
 async def resume_endpoint(
-        decisions: list = Form(..., description="Решения пользователя для HITL"),
+        decisions: list = Form(..., description="Решения пользователя для HITL/уточнений"),
         thread_id: str = Form(..., description="ID диалога для возобновления"),
         user_id: str = Form(..., description="ID пользователя из EDMS"),
         edms_token: str = Form(..., description="Токен пользователя из EDMS"),
         user_info: dict = Depends(verify_and_extract_user_info)
 ):
     """
-    Эндпоинт для возобновления выполнения после прерывания HITL
+    Универсальный эндпоинт для возобновления выполнения после прерывания (уточнений или HITL)
     """
     try:
         # Проверяем thread_id
         UUID(thread_id)
-
-        # Подготовка команды для возобновления
-        command = Command(resume={"decisions": decisions})
 
         # Подготовка конфигурации
         config = {
@@ -182,6 +214,8 @@ async def resume_endpoint(
         }
 
         # Запуск графа с командой возобновления
+        # Для универсального подхода используем Command(resume=...) с решениями
+        command = Command(resume={"decisions": decisions})
         agent_graph = create_agent_graph()
         result = await agent_graph.ainvoke(command, config=config)
 
