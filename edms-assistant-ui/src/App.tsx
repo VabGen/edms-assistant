@@ -5,6 +5,7 @@ import MessageBubble from './components/MessageBubble';
 import ClarificationModal from './components/ClarificationModal';
 import FileUploader from './components/FileUploader';
 import AuthForm from './components/AuthForm';
+import HITLModal from './components/HITLModal';
 
 function App() {
     const {
@@ -15,9 +16,11 @@ function App() {
         setFile,
         isLoading,
         handleSubmit,
-        requiresClarification,  // ✅ Состояние уточнения
-        candidates,            // ✅ Кандидаты для уточнения
-        handleClarify,         // ✅ Функция для обработки уточнений
+        requiresClarification,
+        requiresHITL,
+        candidates,
+        handleClarify,
+        handleHITLDecision,
         resetChat,
         serviceToken,
         setServiceToken,
@@ -28,7 +31,6 @@ function App() {
         updateUserId,
         setRequiresClarification,
     } = useChat();
-    // const { setRequiresClarification } = useChat();
 
     return (
         <div
@@ -129,11 +131,21 @@ function App() {
                 <ClarificationModal
                     candidates={candidates}
                     onSelect={(selection) => {
-                        handleClarify(selection); // ✅ Передаем выбор в hook
+                        handleClarify(selection);
                     }}
                     onCancel={() => {
                         setRequiresClarification(false);
                     }}
+                />
+            )}
+
+            {/* ✅ Модальное окно HITL */}
+            {requiresHITL && (
+                <HITLModal
+                    onApprove={() => handleHITLDecision('approve')}
+                    onEdit={(content) => handleHITLDecision('edit', content)}
+                    onReject={() => handleHITLDecision('reject')}
+                    onCancel={() => setRequiresClarification(false)}
                 />
             )}
         </div>

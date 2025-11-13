@@ -43,16 +43,12 @@ class GetEmployeeByIdInput(BaseModel):
     name_or_callable="get_employee_by_id",
     description="Получить данные сотрудника по его UUID. Возвращает полную информацию о сотруднике.",
 )
-async def get_employee_by_id_tool(
-        employee_id: UUID,
-        service_token: str,
-) -> str:
+async def get_employee_by_id_tool(employee_id: UUID, service_token: str) -> str:
     """
     Выполняет GET /api/employee/{id} через DocumentClient.
     Возвращает JSON-ответ от EDMS.
     """
     try:
-
         async with DocumentClient(service_token=service_token) as client:
             response = await client.get_employee_by_id(employee_id)
 
@@ -87,10 +83,10 @@ async def get_employee_by_id_tool(
     description="Найти сотрудника по фамилии (и опционально по имени и подразделению). Возвращает список кандидатов.",
 )
 async def find_responsible_tool(
-        last_name: str,
-        service_token: str,
-        first_name: Optional[str] = None,
-        department_id: Optional[UUID] = None,
+    last_name: str,
+    service_token: str,
+    first_name: Optional[str] = None,
+    department_id: Optional[UUID] = None,
 ) -> str:
     try:
         filter_data = EmployeeFilter(
@@ -143,9 +139,9 @@ async def find_responsible_tool(
     description="Добавить сотрудника как ответственного по договору в документ. Возвращает JSON-ответ об успехе или ошибке.",
 )
 async def add_responsible_to_document_tool(
-        document_id: UUID,
-        responsible_id: UUID,
-        service_token: str,
+    document_id: UUID,
+    responsible_id: UUID,
+    service_token: str,
 ) -> str:
     try:
         body_data = ResponsibleUpdate(addIds=[responsible_id])

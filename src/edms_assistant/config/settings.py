@@ -1,45 +1,79 @@
 # src/edms_assistant/config/settings.py
-from pydantic import BaseModel, Field, HttpUrl, PostgresDsn, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, Literal
 import uuid
 
 
 class VLLMConfig(BaseModel):
-    generative_base_url: HttpUrl = "http://model-generative.shared.du.iba/v1"
-    generative_model: str = "Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8"
-    embedding_base_url: HttpUrl = "http://model-embedding.shared.du.iba/v1"
-    embedding_model: str = "Qwen/Qwen3-Embedding-8B"
-    api_key: str = ""
+    generative_base_url: HttpUrl = Field(
+        default="http://model-generative.shared.du.iba/v1",
+        description="Base URL for generative model API"
+    )
+    generative_model: str = Field(
+        default="Qwen/Qwen2.5-14B-Instruct-GPTQ-Int8",
+        description="Generative model identifier"
+    )
+    embedding_base_url: HttpUrl = Field(
+        default="http://model-embedding.shared.du.iba/v1",
+        description="Base URL for embedding model API"
+    )
+    embedding_model: str = Field(
+        default="Qwen/Qwen3-Embedding-8B",
+        description="Embedding model identifier"
+    )
+    api_key: str = Field(default="", description="API key for model access")
 
 
 class EDMSConfig(BaseModel):
-    base_url: HttpUrl = "http://127.0.0.1:8098"
-    timeout: int = Field(30, ge=1, le=300)
-    service_token: str = Field(..., min_length=10, description="JWT-токен для EDMS")
-    user_id: uuid.UUID = Field(..., description="UUID пользователя в EDMS")
+    base_url: HttpUrl = Field(
+        default="http://127.0.0.1:8098",
+        description="Base URL for EDMS API"
+    )
+    timeout: int = Field(
+        default=30,
+        ge=1,
+        le=300,
+        description="Request timeout in seconds"
+    )
+    service_token: str = Field(
+        ...,
+        min_length=10,
+        description="JWT token for EDMS authentication"
+    )
+    user_id: uuid.UUID = Field(
+        ...,
+        description="UUID of user in EDMS"
+    )
 
 
 class TelemetryConfig(BaseModel):
-    enabled: bool = True
-    endpoint: Optional[HttpUrl] = "http://127.0.0.1:8098"
+    enabled: bool = Field(default=True, description="Enable telemetry collection")
+    endpoint: Optional[HttpUrl] = Field(
+        default="http://127.0.0.1:8098",
+        description="Telemetry endpoint URL"
+    )
 
+    @field_validator("enabled", mode="before")
     @classmethod
-    def _str_to_bool(cls, v):
+    def validate_enabled(cls, v):
         if isinstance(v, str):
             return v.lower() in ("true", "1", "yes", "on")
         return bool(v)
 
-    @field_validator("enabled", mode="before")
-    def validate_enabled(cls, v):
-        return cls._str_to_bool(v)
+
+class SecurityConfig(BaseModel):
+    jwt_secret: str = Field(..., description="JWT secret key")
+    jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
+    jwt_expiration_minutes: int = Field(default=60, description="JWT expiration in minutes")
+    rbac_enabled: bool = Field(default=True, description="Enable Role-Based Access Control")
 
 
 class Settings(BaseSettings):
     # LangSmith
-    langsmith_api_key: Optional[str] = None
-    langsmith_tracing: bool = False
-    langsmith_project: str = "edms-agent"
+    langsmith_api_key: Optional[str] = Field(default=None, description="LangSmith API key")
+    langsmith_tracing: bool = Field(default=False, description="Enable LangSmith tracing")
+    langsmith_project: str = Field(default="edms-agent", description="LangSmith project name")
 
     # vLLM
     vllm: VLLMConfig
@@ -47,32 +81,51 @@ class Settings(BaseSettings):
     # EDMS
     edms: EDMSConfig
 
+    # Security
+    security: SecurityConfig
+
     # Agent
-    agent_enable_tracing: bool = True
-    agent_log_level: str = "INFO"
-    agent_max_retries: int = Field(3, ge=0, le=10)
+    agent_enable_tracing: bool = Field(default=True, description="Enable agent tracing")
+    agent_log_level: str = Field(default="INFO", description="Agent logging level")
+    agent_max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum retry attempts for agent operations"
+    )
 
     # Logging
-    logging_level: str = "INFO"
-    logging_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    logging_level: str = Field(default="INFO", description="Logging level")
+    logging_format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        description="Logging format string"
+    )
 
     # OpenAI
-    max_tokens: int = 2048
+    max_tokens: int = Field(default=2048, description="Maximum tokens for LLM")
     telemetry: TelemetryConfig
-    vllm_timeout: int = Field(120, ge=1, le=600)
-    llm_temperature: float = Field(0.0, ge=0.0, le=1.0)
+    vllm_timeout: int = Field(
+        default=120,
+        ge=1,
+        le=600,
+        description="vLLM timeout in seconds"
+    )
+    llm_temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="LLM temperature for generation"
+    )
 
     # Storage & Checkpointing
-    store_type: str = "memory"
-    checkpointer_type: str = "memory"
-    # checkpointer_postgres_url: Optional[PostgresDsn] = Field(
-    #     None, description="PostgreSQL DSN для LangGraph Checkpointer (опционально)"
-    # )
-    # store_type: str = "memory"
-    # checkpointer_type: str = "postgres"
-    # checkpointer_postgres_url: PostgresDsn = Field(
-    #     ..., description="PostgreSQL DSN для LangGraph Checkpointer"
-    # )
+    store_type: Literal["memory", "sqlite"] = Field(
+        default="memory",
+        description="Type of state storage to use"
+    )
+    checkpointer_type: Literal["memory", "sqlite"] = Field(
+        default="memory",
+        description="Type of checkpoint storage to use"
+    )
 
     model_config = {
         "env_file": ".env",

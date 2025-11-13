@@ -22,8 +22,7 @@ class SummarizeAttachmentInput(BaseModel):
 
 class ExtractAndSummarizeFileInput(BaseModel):
     file_path: str = Field(..., description="Путь к загруженному файлу")
-    service_token: str = Field(...,
-                               description="JWT-токен для авторизации (может не использоваться для локального файла)")
+    service_token: str = Field(..., description="JWT-токен для авторизации")
 
 
 @tool(
@@ -32,7 +31,7 @@ class ExtractAndSummarizeFileInput(BaseModel):
     description="Извлечь текст из вложения документа и создать краткое содержание. Поддерживает PDF, DOCX, TXT.",
 )
 async def summarize_attachment_tool(
-        document_id: str, attachment_id: str, attachment_name: str, service_token: str
+    document_id: str, attachment_id: str, attachment_name: str, service_token: str
 ) -> str:
     try:
         doc_uuid = UUID(document_id)
@@ -48,7 +47,11 @@ async def summarize_attachment_tool(
 
         text = extract_text_from_bytes(file_bytes, attachment_name)
         if not text or len(text) < 20:
-            return json.dumps({"error": f"Файл '{attachment_name}' содержит мало текста или не поддерживается."})
+            return json.dumps(
+                {
+                    "error": f"Файл '{attachment_name}' содержит мало текста или не поддерживается."
+                }
+            )
 
         llm = get_llm()
         prompt = (
@@ -58,7 +61,10 @@ async def summarize_attachment_tool(
         )
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
         summary = getattr(response, "content", str(response))
-        return json.dumps({"summary": f"Краткое содержание файла '{attachment_name}':\n{summary}"}, ensure_ascii=False)
+        return json.dumps(
+            {"summary": f"Краткое содержание файла '{attachment_name}':\n{summary}"},
+            ensure_ascii=False,
+        )
 
     except Exception as e:
         logger.error(f"Ошибка суммаризации вложения: {e}", exc_info=True)
@@ -67,7 +73,7 @@ async def summarize_attachment_tool(
 
 @tool(
     args_schema=ExtractAndSummarizeFileInput,
-    name_or_callable="extract_and_summarize_file",  # Переименован
+    name_or_callable="extract_and_summarize_file",
     description="Извлечь текст из загруженного файла пользователя и создать краткое содержание. Поддерживает PDF, DOCX, TXT.",
 )
 async def extract_and_summarize_file_tool(file_path: str, service_token: str) -> str:
@@ -81,7 +87,11 @@ async def extract_and_summarize_file_tool(file_path: str, service_token: str) ->
 
         text = extract_text_from_bytes(file_bytes, filename)
         if not text or len(text) < 20:
-            return json.dumps({"error": f"Файл '{filename}' содержит мало текста или не поддерживается."})
+            return json.dumps(
+                {
+                    "error": f"Файл '{filename}' содержит мало текста или не поддерживается."
+                }
+            )
 
         llm = get_llm()
         prompt = (
@@ -91,7 +101,10 @@ async def extract_and_summarize_file_tool(file_path: str, service_token: str) ->
         )
         response = await llm.ainvoke([{"role": "user", "content": prompt}])
         summary = getattr(response, "content", str(response))
-        return json.dumps({"summary": f"Краткое содержание файла '{filename}':\n{summary}"}, ensure_ascii=False)
+        return json.dumps(
+            {"summary": f"Краткое содержание файла '{filename}':\n{summary}"},
+            ensure_ascii=False,
+        )
 
     except Exception as e:
         logger.error(f"Ошибка суммаризации файла: {e}", exc_info=True)

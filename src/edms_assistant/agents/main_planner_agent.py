@@ -1,45 +1,23 @@
 # src/edms_assistant/agents/main_planner_agent.py
-
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from src.edms_assistant.core.state import GlobalState
-from src.edms_assistant.core.registry import BaseAgent, agent_registry
+from src.edms_assistant.core.base_agent import BaseAgent
 from src.edms_assistant.infrastructure.llm.llm import get_llm
-from langgraph.types import interrupt
+from src.edms_assistant.core.registry import agent_registry
 import json
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class MainPlannerAgent(BaseAgent):
     """Планирующий агент: анализирует запрос, формирует план, запускает агентов, собирает результаты"""
 
-    def __init__(self):
-        super().__init__()
-        self.llm = get_llm()
-        self.tools = []
-
-    def _clean_result_for_json(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Очищает результат для JSON сериализации"""
-        if not isinstance(result, dict):
-            return {"raw_result": str(result)}
-
-        cleaned = {}
-        for key, value in result.items():
-            if isinstance(value, (list, tuple)):
-                cleaned[key] = []
-                for item in value:
-                    if hasattr(item, 'content'):
-                        # Это сообщение LangChain - извлекаем только содержимое
-                        cleaned[key].append(str(item.content))
-                    else:
-                        cleaned[key].append(item)
-            elif hasattr(value, 'content'):
-                # Это сообщение LangChain - извлекаем только содержимое
-                cleaned[key] = str(value.content)
-            elif isinstance(value, dict):
-                cleaned[key] = self._clean_result_for_json(value)
-            else:
-                cleaned[key] = value
-        return cleaned
+    def __init__(self, llm=None, tools=None):
+        super().__init__(llm or get_llm(), tools)
+        self.llm = llm or get_llm()
 
     async def process(self, state: GlobalState, **kwargs) -> Dict[str, Any]:
         """Основной процесс: планирование -> выполнение -> ответ"""
@@ -47,17 +25,11 @@ class MainPlannerAgent(BaseAgent):
             user_message = state.user_message
 
             # Проверяем, является ли сообщение числовым уточнением (например, "2")
-            if user_message.strip().isdigit() and hasattr(state,
-                                                          'clarification_context') and state.clarification_context:
+            if user_message.strip().isdigit() and state.clarification_context:
                 # Это уточнение - передаем в employee_agent напрямую
                 employee_agent = agent_registry.get_agent_instance("employee_agent")
                 if employee_agent:
                     result = await employee_agent.process(state)
-
-                    # ✅ Если результат - это interrupt, передаем его дальше
-                    if isinstance(result, dict) and result.get("__interrupt__"):
-                        return result  # ✅ Передаем interrupt дальше
-
                     return result
 
             # Формируем план действий (если это не уточнение)
@@ -66,38 +38,33 @@ class MainPlannerAgent(BaseAgent):
             # Выполняем план (запускаем агентов)
             results = await self.execute_plan(plan, state)
 
-            # Проверяем, есть ли результаты с уточнением
-            for result in results:
-                if isinstance(result, dict) and result.get("__interrupt__"):
-                    # Если результат содержит прерывание - передаем его дальше
-                    return result
-
             # Формируем финальный ответ
-            final_response = await self.generate_final_response(user_message, plan, results)
+            final_response = await self.generate_final_response(
+                user_message, plan, results
+            )
 
             return {
-                "messages": [HumanMessage(content=user_message),
-                             AIMessage(content=final_response)],
+                "messages": [
+                    HumanMessage(content=user_message),
+                    AIMessage(content=final_response),
+                ],
                 "requires_execution": False,
                 "requires_clarification": False,
                 "plan": plan,
-                "results": results
+                "results": results,
             }
 
         except Exception as e:
-            # ✅ Обработка Interrupt исключений
-            from langgraph.types import Interrupt
-            if isinstance(e, Interrupt):
-                # Это прерывание - возвращаем его как результат
-                return interrupt(e.value)
-
+            logger.error(f"Ошибка планирования: {e}", exc_info=True)
             error_msg = f"Ошибка планирования: {str(e)}"
             return {
-                "messages": [HumanMessage(content=state.user_message),
-                             AIMessage(content=error_msg)],
+                "messages": [
+                    HumanMessage(content=state.user_message),
+                    AIMessage(content=error_msg),
+                ],
                 "requires_execution": False,
                 "requires_clarification": False,
-                "error": str(e)
+                "error": str(e),
             }
 
     async def plan_actions(self, state: GlobalState) -> Dict[str, Any]:
@@ -132,10 +99,9 @@ class MainPlannerAgent(BaseAgent):
         }}
         """
 
-        response = await self.llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message)
-        ])
+        response = await self.llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
+        )
 
         try:
             # Парсим JSON ответа
@@ -146,23 +112,47 @@ class MainPlannerAgent(BaseAgent):
             # Резервный парсинг если LLM не вернул чистый JSON
             if "document_agent" in response_content.lower():
                 return {
-                    "actions": [{"agent": "document_agent", "action": "get_document_info", "params": {}}],
-                    "reasoning": "Запрос связан с документом"
+                    "actions": [
+                        {
+                            "agent": "document_agent",
+                            "action": "get_document_info",
+                            "params": {},
+                        }
+                    ],
+                    "reasoning": "Запрос связан с документом",
                 }
             elif "employee_agent" in response_content.lower():
                 return {
-                    "actions": [{"agent": "employee_agent", "action": "find_employee", "params": {}}],
-                    "reasoning": "Запрос связан с сотрудником"
+                    "actions": [
+                        {
+                            "agent": "employee_agent",
+                            "action": "find_employee",
+                            "params": {},
+                        }
+                    ],
+                    "reasoning": "Запрос связан с сотрудником",
                 }
             elif "attachment_agent" in response_content.lower():
                 return {
-                    "actions": [{"agent": "attachment_agent", "action": "analyze_attachment", "params": {}}],
-                    "reasoning": "Запрос связан с вложением"
+                    "actions": [
+                        {
+                            "agent": "attachment_agent",
+                            "action": "analyze_attachment",
+                            "params": {},
+                        }
+                    ],
+                    "reasoning": "Запрос связан с вложением",
                 }
             else:
                 return {
-                    "actions": [{"agent": "document_agent", "action": "get_document_info", "params": {}}],
-                    "reasoning": "По умолчанию"
+                    "actions": [
+                        {
+                            "agent": "document_agent",
+                            "action": "get_document_info",
+                            "params": {},
+                        }
+                    ],
+                    "reasoning": "По умолчанию",
                 }
 
     async def execute_plan(self, plan: Dict[str, Any], state: GlobalState) -> list:
@@ -178,53 +168,45 @@ class MainPlannerAgent(BaseAgent):
             agent = agent_registry.get_agent_instance(agent_name)
             if agent:
                 try:
-                    # Обновляем состояние, если нужно
-                    # В данном случае передаем оригинальное состояние
-                    result = await agent.process(state)
-
-                    # ✅ Проверяем, является ли результат прерыванием
-                    if isinstance(result, dict) and result.get("__interrupt__"):
-                        # Если это прерывание - сразу возвращаем его
-                        return [result]
-
-                    # Проверяем, требует ли результат уточнения
-                    if result.get("requires_clarification", False):
-                        # Если агент требует уточнения - возвращаем это сразу
-                        return [result]
+                    # Обновляем состояние с параметрами действия
+                    action_state = state.model_copy(update=params)
+                    result = await agent.process(action_state)
 
                     # Очищаем результат для JSON сериализации
                     cleaned_result = self._clean_result_for_json(result)
-                    results.append({
-                        "agent": agent_name,
-                        "action": action_type,
-                        "result": cleaned_result,
-                        "success": True
-                    })
+                    results.append(
+                        {
+                            "agent": agent_name,
+                            "action": action_type,
+                            "result": cleaned_result,
+                            "success": True,
+                        }
+                    )
                 except Exception as e:
-                    results.append({
+                    results.append(
+                        {
+                            "agent": agent_name,
+                            "action": action_type,
+                            "result": {"error": str(e)},
+                            "success": False,
+                        }
+                    )
+            else:
+                results.append(
+                    {
                         "agent": agent_name,
                         "action": action_type,
-                        "result": {"error": str(e)},
-                        "success": False
-                    })
-            else:
-                results.append({
-                    "agent": agent_name,
-                    "action": action_type,
-                    "result": {"error": f"Агент {agent_name} не найден"},
-                    "success": False
-                })
+                        "result": {"error": f"Агент {agent_name} не найден"},
+                        "success": False,
+                    }
+                )
 
         return results
 
-    async def generate_final_response(self, user_message: str, plan: Dict[str, Any], results: list) -> str:
+    async def generate_final_response(
+        self, user_message: str, plan: Dict[str, Any], results: list
+    ) -> str:
         """Формирует финальный ответ на основе результатов агентов"""
-        # Проверяем, есть ли результаты с уточнением
-        for result in results:
-            if isinstance(result, dict) and result.get("__interrupt__"):
-                # Если есть прерывание - не формируем ответ, а возвращаем его через interrupt
-                return f"Требуется уточнение: {result}"
-
         system_prompt = f"""
         Ты - ассистент для управления документами.
         Пользователь спросил: "{user_message}"
@@ -238,9 +220,32 @@ class MainPlannerAgent(BaseAgent):
         На основе этих данных сформируй понятный ответ для пользователя на русском языке.
         """
 
-        response = await self.llm.ainvoke([
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message)
-        ])
+        response = await self.llm.ainvoke(
+            [SystemMessage(content=system_prompt), HumanMessage(content=user_message)]
+        )
 
         return str(response.content)
+
+    def _clean_result_for_json(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Очищает результат для JSON сериализации"""
+        if not isinstance(result, dict):
+            return {"raw_result": str(result)}
+
+        cleaned = {}
+        for key, value in result.items():
+            if isinstance(value, (list, tuple)):
+                cleaned[key] = []
+                for item in value:
+                    if hasattr(item, "content"):
+                        # Это сообщение LangChain - извлекаем только содержимое
+                        cleaned[key].append(str(item.content))
+                    else:
+                        cleaned[key].append(item)
+            elif hasattr(value, "content"):
+                # Это сообщение LangChain - извлекаем только содержимое
+                cleaned[key] = str(value.content)
+            elif isinstance(value, dict):
+                cleaned[key] = self._clean_result_for_json(value)
+            else:
+                cleaned[key] = value
+        return cleaned

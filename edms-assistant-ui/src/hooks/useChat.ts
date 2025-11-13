@@ -1,7 +1,7 @@
 // src/hooks/useChat.ts
 
 import { useState } from "react";
-import { type ChatResponse, sendMessage } from "../utils/api.ts";
+import { type ChatResponse, sendMessage, resumeConversation } from "../utils/api.ts";
 
 export interface Message {
   id: string;
@@ -22,7 +22,8 @@ export const useChat = () => {
   const [threadId, setThreadId] = useState<string | null>(() => {
     return localStorage.getItem('edms_thread_id');
   });
-  const [requiresClarification, setRequiresClarification] = useState(false);  // ✅ Состояние уточнения
+  const [requiresClarification, setRequiresClarification] = useState(false);
+  const [requiresHITL, setRequiresHITL] = useState(false);  // ✅ Локальное состояние для HITL
   const [candidates, setCandidates] = useState<ChatResponse['candidates']>([]);
   const [serviceToken, setServiceToken] = useState<string>(() => {
     return localStorage.getItem('edms_service_token') || '';
@@ -75,9 +76,25 @@ export const useChat = () => {
       );
       updateThreadId(res.thread_id || null);
 
-      // ✅ Проверяем, требуется ли уточнение
-      if (res.requires_clarification) {
+      // ✅ Проверяем, требуется ли HITL
+      if (res.requires_hitl_decision) {
+        setRequiresHITL(true);
+        setRequiresClarification(false);
+        setCandidates([]);
+
+        // Добавляем сообщение о необходимости подтверждения
+        const clarificationMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: res.response || 'Требуется подтверждение действия',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, clarificationMsg]);
+      }
+      // ✅ Проверяем, требуется ли уточнение (например, выбор сотрудника)
+      else if (res.requires_clarification) {
         setRequiresClarification(true);
+        setRequiresHITL(false);
         setCandidates(res.candidates || []);
 
         // Добавляем сообщение с кандидатами в чат
@@ -90,6 +107,7 @@ export const useChat = () => {
         setMessages(prev => [...prev, clarificationMsg]);
       } else {
         setRequiresClarification(false);
+        setRequiresHITL(false);
         setCandidates([]);
 
         const botMsg: Message = {
@@ -115,8 +133,10 @@ export const useChat = () => {
     }
   };
 
+  // ✅ Обновленная функция обработки уточнений
   const handleClarify = async (selection: string) => {
     setRequiresClarification(false);
+    setRequiresHITL(false);
     setCandidates([]);
 
     // Добавляем выбор пользователя в чат как сообщение
@@ -133,16 +153,26 @@ export const useChat = () => {
       const res = await sendMessage(
         userId,
         serviceToken,
-        selection,  // ✅ Это может быть "2", "4d604256-1c54-11f0-a094-0ff14f96a8a9", или полное имя
+        selection,
         documentId || undefined,
         undefined,
         threadId || undefined
       );
       updateThreadId(res.thread_id || threadId);
 
-      if (res.requires_clarification) {
-        // Если снова нужна clarification, показываем снова
+      if (res.requires_hitl_decision) {
+        setRequiresHITL(true);
+        setRequiresClarification(false);
+        const clarificationMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: res.response || 'Требуется подтверждение действия',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, clarificationMsg]);
+      } else if (res.requires_clarification) {
         setRequiresClarification(true);
+        setRequiresHITL(false);
         setCandidates(res.candidates || []);
         const clarificationMsg: Message = {
           id: Date.now().toString(),
@@ -152,11 +182,71 @@ export const useChat = () => {
         };
         setMessages(prev => [...prev, clarificationMsg]);
       } else {
-        // Обычный ответ
         const botMsg: Message = {
           id: Date.now().toString(),
           role: 'assistant',
           content: res.response || 'Нет ответа.',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, botMsg]);
+      }
+    } catch (err) {
+      console.error(err);
+      const errorMsg: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: `Ошибка: ${(err as Error).message}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ✅ Новая функция для обработки HITL решений
+  const handleHITLDecision = async (decisionType: 'approve' | 'edit' | 'reject', editContent?: string) => {
+    setRequiresHITL(false);
+
+    if (!threadId) {
+      console.error('No thread ID for HITL resume');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      let decisions: { type: string; edited_action?: { name: string; args: { content: string } }; message?: string; }[] = [];
+      if (decisionType === 'approve') {
+        decisions = [{ type: 'approve' }];
+      } else if (decisionType === 'reject') {
+        decisions = [{ type: 'reject', message: 'Действие отклонено пользователем' }];
+      } else if (decisionType === 'edit' && editContent) {
+        decisions = [{
+          type: 'edit',
+          edited_action: {
+            name: 'edited_action',  // или конкретное имя инструмента
+            args: { content: editContent }
+          }
+        }];
+      }
+
+      const res = await resumeConversation(userId, serviceToken, decisions, threadId);
+
+      if (res.requires_hitl_decision) {
+        setRequiresHITL(true);
+        const clarificationMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: res.response || 'Требуется подтверждение действия',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, clarificationMsg]);
+      } else {
+        const botMsg: Message = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: res.response || 'Обработка завершена.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, botMsg]);
@@ -181,10 +271,12 @@ export const useChat = () => {
     setFile(null);
     updateThreadId(null);
     setDocumentId('');
-    setRequiresClarification(false);  // ✅ Сбрасываем уточнение при сбросе чата
+    setRequiresClarification(false);
+    setRequiresHITL(false); // ✅ Сбрасываем HITL при сбросе чата
     setCandidates([]);
   };
 
+  // ✅ Возвращаем setRequiresHITL в объекте
   return {
     messages,
     input,
@@ -193,9 +285,11 @@ export const useChat = () => {
     setFile,
     isLoading,
     handleSubmit,
-    requiresClarification,  // ✅ Состояние уточнения
+    requiresClarification,
+    requiresHITL,
     candidates,
     handleClarify,
+    handleHITLDecision,
     resetChat,
     serviceToken,
     setServiceToken,
@@ -204,6 +298,7 @@ export const useChat = () => {
     threadId,
     userId,
     updateUserId,
-    setRequiresClarification,  // ✅ Функция обновления уточнения
+    setRequiresClarification,
+    setRequiresHITL, // ✅ Добавляем функцию обновления состояния HITL
   };
 };
