@@ -22,7 +22,7 @@ export const useChat = () => {
   const [threadId, setThreadId] = useState<string | null>(() => {
     return localStorage.getItem('edms_thread_id');
   });
-  const [requiresClarification, setRequiresClarification] = useState(false);
+  const [requiresClarification, setRequiresClarification] = useState(false);  // ✅ Состояние уточнения
   const [candidates, setCandidates] = useState<ChatResponse['candidates']>([]);
   const [serviceToken, setServiceToken] = useState<string>(() => {
     return localStorage.getItem('edms_service_token') || '';
@@ -75,12 +75,12 @@ export const useChat = () => {
       );
       updateThreadId(res.thread_id || null);
 
-      // ✅ Проверяем, есть ли уточнение (из __interrupt__ или обычного формата)
+      // ✅ Проверяем, требуется ли уточнение
       if (res.requires_clarification) {
         setRequiresClarification(true);
         setCandidates(res.candidates || []);
 
-        // ✅ Добавляем сообщение с кандидатами в чат
+        // Добавляем сообщение с кандидатами в чат
         const clarificationMsg: Message = {
           id: Date.now().toString(),
           role: 'assistant',
@@ -89,6 +89,9 @@ export const useChat = () => {
         };
         setMessages(prev => [...prev, clarificationMsg]);
       } else {
+        setRequiresClarification(false);
+        setCandidates([]);
+
         const botMsg: Message = {
           id: Date.now().toString(),
           role: 'assistant',
@@ -102,7 +105,7 @@ export const useChat = () => {
       const errorMsg: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: 'Ошибка: не удалось отправить сообщение.',
+        content: `Ошибка: ${(err as Error).message}`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMsg]);
@@ -112,12 +115,11 @@ export const useChat = () => {
     }
   };
 
-  // ✅ Новая функция для обработки уточнений
   const handleClarify = async (selection: string) => {
     setRequiresClarification(false);
     setCandidates([]);
 
-    // ✅ Добавляем выбор пользователя в чат как сообщение
+    // Добавляем выбор пользователя в чат как сообщение
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -131,7 +133,7 @@ export const useChat = () => {
       const res = await sendMessage(
         userId,
         serviceToken,
-        selection, // ✅ Это может быть "2", ID или полное имя
+        selection,  // ✅ Это может быть "2", "4d604256-1c54-11f0-a094-0ff14f96a8a9", или полное имя
         documentId || undefined,
         undefined,
         threadId || undefined
@@ -139,7 +141,7 @@ export const useChat = () => {
       updateThreadId(res.thread_id || threadId);
 
       if (res.requires_clarification) {
-        // ✅ Если снова нужна clarification, показываем снова
+        // Если снова нужна clarification, показываем снова
         setRequiresClarification(true);
         setCandidates(res.candidates || []);
         const clarificationMsg: Message = {
@@ -150,7 +152,7 @@ export const useChat = () => {
         };
         setMessages(prev => [...prev, clarificationMsg]);
       } else {
-        // ✅ Обычный ответ
+        // Обычный ответ
         const botMsg: Message = {
           id: Date.now().toString(),
           role: 'assistant',
@@ -164,7 +166,7 @@ export const useChat = () => {
       const errorMsg: Message = {
         id: Date.now().toString(),
         role: 'assistant',
-        content: 'Ошибка: не удалось уточнить выбор.',
+        content: `Ошибка: ${(err as Error).message}`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMsg]);
@@ -179,7 +181,7 @@ export const useChat = () => {
     setFile(null);
     updateThreadId(null);
     setDocumentId('');
-    setRequiresClarification(false);
+    setRequiresClarification(false);  // ✅ Сбрасываем уточнение при сбросе чата
     setCandidates([]);
   };
 
@@ -191,9 +193,9 @@ export const useChat = () => {
     setFile,
     isLoading,
     handleSubmit,
-    requiresClarification,
+    requiresClarification,  // ✅ Состояние уточнения
     candidates,
-    handleClarify, // ✅ Теперь доступна
+    handleClarify,
     resetChat,
     serviceToken,
     setServiceToken,
@@ -202,5 +204,6 @@ export const useChat = () => {
     threadId,
     userId,
     updateUserId,
+    setRequiresClarification,  // ✅ Функция обновления уточнения
   };
 };

@@ -2,10 +2,10 @@
 
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langgraph.types import interrupt
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.registry import BaseAgent, agent_registry
 from src.edms_assistant.infrastructure.llm.llm import get_llm
+from langgraph.types import interrupt
 import json
 
 
@@ -18,7 +18,7 @@ class MainPlannerAgent(BaseAgent):
         self.tools = []
 
     def _clean_result_for_json(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Очищает результат для JSON сериализации (убирает объекты LangChain)"""
+        """Очищает результат для JSON сериализации"""
         if not isinstance(result, dict):
             return {"raw_result": str(result)}
 
@@ -54,13 +54,11 @@ class MainPlannerAgent(BaseAgent):
                 if employee_agent:
                     result = await employee_agent.process(state)
 
-                    # Если результат требует уточнения - возвращаем его как есть
-                    if result.get("requires_clarification", False):
-                        return result
+                    # ✅ Если результат - это interrupt, передаем его дальше
+                    if isinstance(result, dict) and result.get("__interrupt__"):
+                        return result  # ✅ Передаем interrupt дальше
 
-                    # Очищаем результат для JSON сериализации
-                    cleaned_result = self._clean_result_for_json(result)
-                    return cleaned_result
+                    return result
 
             # Формируем план действий (если это не уточнение)
             plan = await self.plan_actions(state)
@@ -70,35 +68,33 @@ class MainPlannerAgent(BaseAgent):
 
             # Проверяем, есть ли результаты с уточнением
             for result in results:
-                if result.get("requires_clarification", False):
-                    clarification_context = result.get("clarification_context", {})
-                    if clarification_context.get("type") == "employee_selection":
-                        candidates = clarification_context.get("candidates", [])
-                        if candidates:
-                            # 🔴 ПРЕРЫВАНИЕ: нужно уточнение (согласно документации LangChain)
-                            # ВАЖНО: возвращаем только данные, не объекты LangChain
-                            return interrupt({
-                                "type": "clarification",
-                                "candidates": candidates,
-                                "original_query": clarification_context.get("original_query", {}),
-                                "message": clarification_context.get("message", "Уточните выбор кандидата")
-                            })
+                if isinstance(result, dict) and result.get("__interrupt__"):
+                    # Если результат содержит прерывание - передаем его дальше
+                    return result
 
             # Формируем финальный ответ
             final_response = await self.generate_final_response(user_message, plan, results)
 
             return {
-                "messages": [user_message, final_response],  # ✅ Только строки!
+                "messages": [HumanMessage(content=user_message),
+                             AIMessage(content=final_response)],
                 "requires_execution": False,
                 "requires_clarification": False,
                 "plan": plan,
-                "results": self._clean_result_for_json(results)  # ✅ Очищаем результаты
+                "results": results
             }
 
         except Exception as e:
+            # ✅ Обработка Interrupt исключений
+            from langgraph.types import Interrupt
+            if isinstance(e, Interrupt):
+                # Это прерывание - возвращаем его как результат
+                return interrupt(e.value)
+
             error_msg = f"Ошибка планирования: {str(e)}"
             return {
-                "messages": [state.user_message, error_msg],  # ✅ Только строки!
+                "messages": [HumanMessage(content=state.user_message),
+                             AIMessage(content=error_msg)],
                 "requires_execution": False,
                 "requires_clarification": False,
                 "error": str(e)
@@ -186,16 +182,15 @@ class MainPlannerAgent(BaseAgent):
                     # В данном случае передаем оригинальное состояние
                     result = await agent.process(state)
 
+                    # ✅ Проверяем, является ли результат прерыванием
+                    if isinstance(result, dict) and result.get("__interrupt__"):
+                        # Если это прерывание - сразу возвращаем его
+                        return [result]
+
                     # Проверяем, требует ли результат уточнения
                     if result.get("requires_clarification", False):
                         # Если агент требует уточнения - возвращаем это сразу
-                        return [{
-                            "agent": agent_name,
-                            "action": action_type,
-                            "result": self._clean_result_for_json(result),
-                            "requires_clarification": True,
-                            "clarification_context": result.get("clarification_context")
-                        }]
+                        return [result]
 
                     # Очищаем результат для JSON сериализации
                     cleaned_result = self._clean_result_for_json(result)
@@ -226,21 +221,9 @@ class MainPlannerAgent(BaseAgent):
         """Формирует финальный ответ на основе результатов агентов"""
         # Проверяем, есть ли результаты с уточнением
         for result in results:
-            if result.get("requires_clarification", False):
-                clarification_context = result.get("clarification_context", {})
-                if clarification_context:
-                    # Формируем ответ с уточнением
-                    if clarification_context.get("type") == "employee_selection":
-                        candidates = clarification_context.get("candidates", [])
-                        if candidates:
-                            candidates_list = "\n".join([
-                                f"{i + 1}. {cand.get('first_name', '')} {cand.get('middle_name', '')} {cand.get('last_name', '')}"
-                                for i, cand in enumerate(candidates)
-                            ])
-                            return f"Найдено несколько сотрудников с фамилией Иванов. Пожалуйста, уточните, о ком именно вы спрашиваете:\n\n{candidates_list}"
-
-                    # Возвращаем сообщение из clarification_context
-                    return clarification_context.get("message", "Требуется уточнение")
+            if isinstance(result, dict) and result.get("__interrupt__"):
+                # Если есть прерывание - не формируем ответ, а возвращаем его через interrupt
+                return f"Требуется уточнение: {result}"
 
         system_prompt = f"""
         Ты - ассистент для управления документами.

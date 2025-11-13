@@ -2,9 +2,7 @@
 
 from typing import Dict, Any
 from langgraph.graph import StateGraph, END
-from langgraph.types import interrupt
 from src.edms_assistant.core.state import GlobalState
-from src.edms_assistant.config.settings import settings
 from src.edms_assistant.core.registry import agent_registry
 
 
@@ -26,8 +24,6 @@ def create_agent_graph():
         # В остальных случаях используем main_planner_agent
         planner_agent = agent_registry.get_agent_instance("main_planner_agent")
         if planner_agent:
-            # ⚠️ ВАЖНО: НЕ обрабатываем результаты с уточнением здесь
-            # Пусть LangGraph сам решает, нужно ли прерывание
             result = await planner_agent.process(state)
             return result
         else:
@@ -45,7 +41,7 @@ def create_agent_graph():
     # Добавляем переход
     graph.add_edge("process", END)
 
-    # Используем MemorySaver как в документации LangGraph
+    # Используем MemorySaver как в документации LangChain
     from langgraph.checkpoint.memory import MemorySaver
     checkpointer = MemorySaver()
 

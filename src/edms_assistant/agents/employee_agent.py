@@ -2,8 +2,8 @@
 
 from typing import Dict, Any
 import re
-from langchain_core.messages import HumanMessage, AIMessage  # ✅ Импортируем для типизации
-from langgraph.types import interrupt  # ✅ Импортируем interrupt
+from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.types import interrupt  # ✅ Используем interrupt из LangGraph
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.registry import BaseAgent
 from src.edms_assistant.tools.employee import (
@@ -21,7 +21,6 @@ class EmployeeAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.llm = get_llm()
-        # Инициализируем инструменты для работы с сотрудниками
         self.tools = [
             get_employee_by_id_tool,
             find_responsible_tool,
@@ -46,7 +45,8 @@ class EmployeeAgent(BaseAgent):
                 }
                 employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
                 return {
-                    "messages": [user_message, employee_result],  # ✅ Только строки!
+                    "messages": [HumanMessage(content=user_message),
+                                 AIMessage(content=employee_result)],
                     "requires_execution": False,
                     "requires_clarification": False
                 }
@@ -69,16 +69,17 @@ class EmployeeAgent(BaseAgent):
                         employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
 
                         return {
-                            "messages": [user_message,
-                                         f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}"],
-                            # ✅ Только строки!
+                            "messages": [HumanMessage(content=user_message),
+                                         AIMessage(
+                                             content=f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}")],
                             "requires_execution": False,
                             "requires_clarification": False
                         }
 
                 # Если не удалось обработать выбор - возвращаем сообщение об ошибке
                 return {
-                    "messages": [user_message, "Пожалуйста, укажите корректный номер из списка."],  # ✅ Только строки!
+                    "messages": [HumanMessage(content=user_message),
+                                 AIMessage(content="Пожалуйста, укажите корректный номер из списка.")],
                     "requires_execution": False,
                     "requires_clarification": False
                 }
@@ -108,18 +109,18 @@ class EmployeeAgent(BaseAgent):
 
                         if "error" in search_data:
                             return {
-                                "messages": [user_message, f"Ошибка поиска: {search_data['error']}"],
-                                # ✅ Только строки!
+                                "messages": [HumanMessage(content=user_message),
+                                             AIMessage(content=f"Ошибка поиска: {search_data['error']}")],
                                 "requires_execution": False,
                                 "requires_clarification": False
                             }
 
                         # Проверяем, есть ли найденные сотрудники
                         if isinstance(search_data, list) and len(search_data) > 0:
-                            # Если найдено несколько сотрудников - ВЫЗЫВАЕМ ПРЕРЫВАНИЕ LANGGRAPH
+                            # Если найдено несколько сотрудников - ВСЕГДА ВЫЗЫВАЕМ ПРЕРЫВАНИЕ LANGGRAPH
                             if len(search_data) > 1:
-                                # 🔴 ВАЖНО: используем interrupt() как в документации LangChain
-                                # Но НЕ возвращаем объекты LangChain, только данные
+                                # 🔴 ВАЖНО: ВСЕГДА вызываем interrupt() как в документации LangChain
+                                # Это заставит LangGraph сохранить состояние и ожидать следующего сообщения
                                 return interrupt({
                                     "type": "clarification",
                                     "candidates": search_data,
@@ -131,9 +132,9 @@ class EmployeeAgent(BaseAgent):
                                 employee_info = search_data[0]
                                 full_name = f"{employee_info.get('last_name', '')} {employee_info.get('first_name', '')} {employee_info.get('middle_name', '')}".strip()
                                 return {
-                                    "messages": [user_message,
-                                                 f"Найден сотрудник: {full_name}, ID: {employee_info.get('id')}"],
-                                    # ✅ Только строки!
+                                    "messages": [HumanMessage(content=user_message),
+                                                 AIMessage(
+                                                     content=f"Найден сотрудник: {full_name}, ID: {employee_info.get('id')}")],
                                     "requires_execution": False,
                                     "requires_clarification": False
                                 }
@@ -141,22 +142,23 @@ class EmployeeAgent(BaseAgent):
                             # Если ничего не найдено
                             query_desc = ", ".join([f"{k}: {v}" for k, v in name_components.items() if v])
                             return {
-                                "messages": [user_message, f"Сотрудников с параметрами '{query_desc}' не найдено."],
-                                # ✅ Только строки!
+                                "messages": [HumanMessage(content=user_message),
+                                             AIMessage(
+                                                 content=f"Сотрудников с параметрами '{query_desc}' не найдено.")],
                                 "requires_execution": False,
                                 "requires_clarification": False
                             }
                     except json.JSONDecodeError:
                         return {
-                            "messages": [user_message, f"Ошибка обработки результата поиска: {search_result}"],
-                            # ✅ Только строки!
+                            "messages": [HumanMessage(content=user_message),
+                                         AIMessage(content=f"Ошибка обработки результата поиска: {search_result}")],
                             "requires_execution": False,
                             "requires_clarification": False
                         }
                 else:
                     # Если не удалось извлечь имя, возвращаем сообщение о необходимости уточнения
                     return {
-                        "messages": [user_message],  # ✅ Только строки!
+                        "messages": [HumanMessage(content=user_message)],
                         "requires_execution": False,
                         "requires_clarification": True,
                         "clarification_context": {
@@ -167,7 +169,7 @@ class EmployeeAgent(BaseAgent):
 
             # По умолчанию - возвращаем сообщение о необходимости уточнения
             return {
-                "messages": [user_message],  # ✅ Только строки!
+                "messages": [HumanMessage(content=user_message)],
                 "requires_execution": False,
                 "requires_clarification": True,
                 "clarification_context": {
@@ -177,9 +179,16 @@ class EmployeeAgent(BaseAgent):
             }
 
         except Exception as e:
+            # ✅ Обработка Interrupt исключений
+            from langgraph.types import Interrupt
+            if isinstance(e, Interrupt):
+                # Это прерывание - возвращаем его как результат
+                return interrupt(e.value)
+
             error_msg = f"Ошибка обработки сотрудника: {str(e)}"
             return {
-                "messages": [user_message, error_msg],  # ✅ Только строки!
+                "messages": [HumanMessage(content=user_message),
+                             AIMessage(content=error_msg)],
                 "requires_execution": False,
                 "requires_clarification": False,
                 "error": str(e)

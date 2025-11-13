@@ -18,113 +18,62 @@ export interface ChatResponse {
   }>;
   candidates_list?: string;
   thread_id?: string;
-  __interrupt__?: {  // ✅ Поле для прерывания LangGraph
-    value: {
-      type: string;
-      candidates: Array<{
-        id: string;
-        last_name: string;
-        first_name: string;
-        middle_name: string;
-        department?: string;
-        post?: string;
-      }>;
-      original_query?: Record<string, any>;
-      message: string;
-    };
-    timestamp: string;
-  };
+  __interrupt__?: any;  // LangGraph прерывание
 }
 
+// ✅ Улучшенная функция отправки сообщения
 export const sendMessage = async (
   userId: string,
   serviceToken: string,
   message: string,
   documentId?: string,
   file?: File,
-  threadId?: string,
-  // selectedCandidateId?: string
+  threadId?: string
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('user_id', userId);
   formData.append('service_token', serviceToken);
-  if (message) formData.append('user_message', message);
-  if (documentId) formData.append('document_id', documentId);
-  if (file) formData.append('file', file);
-  if (threadId) formData.append('thread_id', threadId);
-
-  const res = await axios.post<ChatResponse>(
-    `${API_BASE}/chat`,
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }
-  );
-
-  // ✅ Преобразуем __interrupt__ в формат уточнения для фронтенда
-  const data = res.data;
-  if (data.__interrupt__) {
-    return {
-      ...data,
-      requires_clarification: true,
-      clarification_type: "employee_selection",
-      candidates: data.__interrupt__.value.candidates,
-      candidates_list: data.__interrupt__.value.message,
-      response: data.__interrupt__.value.message
-    };
-  }
-
-  return data;
-};
-
-// Для потоковой передачи
-export const streamMessage = async (
-  userId: string,
-  serviceToken: string,
-  message: string,
-  documentId: string | undefined,
-  file: File | undefined,
-  threadId: string | undefined,
-  onChunk: (chunk: string) => void,
-  onComplete: () => void,
-  onError: (err: string) => void
-) => {
-  const formData = new FormData();
-  formData.append('user_id', userId);
-  formData.append('service_token', serviceToken);
-  if (message) formData.append('message', message);
+  formData.append('user_message', message);  // ✅ Правильное имя поля
   if (documentId) formData.append('document_id', documentId);
   if (file) formData.append('file', file);
   if (threadId) formData.append('thread_id', threadId);
 
   try {
-    const response = await fetch(`${API_BASE}/chat/stream`, {
-      method: 'POST',
-      body: formData,
-    });
+    // ✅ Убираем `await` изнутри `axios.post` - он уже возвращает Promise
+    const response = await axios.post<ChatResponse>(
+      `${API_BASE}/chat`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 30000,  // ✅ Добавляем таймаут
+      }
+    );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    const data = response.data;
+
+    // ✅ Обрабатываем __interrupt__ от LangGraph
+    if (data.__interrupt__) {
+      return {
+        ...data,
+        requires_clarification: true,
+        clarification_type: "employee_selection",
+        candidates: data.__interrupt__.value.candidates,
+        candidates_list: data.__interrupt__.value.message,
+        response: data.__interrupt__.value.message
+      };
     }
 
-    if (!response.body) {
-      throw new Error('ReadableStream not supported');
+    return data;
+  } catch (error) {
+    // ✅ Лучшая обработка ошибок
+    if (axios.isAxiosError(error)) {
+      throw new Error(`API Error: ${error.response?.data?.detail || error.message}`);
+    } else if (error instanceof Error) {
+      throw new Error(`Network Error: ${error.message}`);
+    } else {
+      throw new Error('Unknown error occurred');
     }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      onChunk(chunk);
-    }
-
-    onComplete();
-  } catch (err) {
-    onError(String(err));
   }
 };

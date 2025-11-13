@@ -1,332 +1,143 @@
 // src/App.tsx
 
-import { useChat } from './hooks/useChat';
+import {useChat} from './hooks/useChat';
 import MessageBubble from './components/MessageBubble';
 import ClarificationModal from './components/ClarificationModal';
 import FileUploader from './components/FileUploader';
 import AuthForm from './components/AuthForm';
 
 function App() {
-  const {
-    messages,
-    input,
-    setInput,
-    file,
-    setFile,
-    isLoading,
-    handleSubmit,
-    requiresClarification,
-    candidates,
-    handleClarify,
-    resetChat,
-    serviceToken,
-    setServiceToken,
-    documentId,
-    setDocumentId,
-    threadId,
-    userId,
-    updateUserId,
-  } = useChat();
+    const {
+        messages,
+        input,
+        setInput,
+        file,
+        setFile,
+        isLoading,
+        handleSubmit,
+        requiresClarification,  // ✅ Состояние уточнения
+        candidates,            // ✅ Кандидаты для уточнения
+        handleClarify,         // ✅ Функция для обработки уточнений
+        resetChat,
+        serviceToken,
+        setServiceToken,
+        documentId,
+        setDocumentId,
+        threadId,
+        userId,
+        updateUserId,
+        setRequiresClarification,
+    } = useChat();
+    // const { setRequiresClarification } = useChat();
 
-  return (
-    // ✅ Главный контейнер: центрирование, фон, минимальная высота
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white flex items-center justify-center p-4">
-      {/* ✅ Карточка: центрированная область с тенью и закруглёнными углами */}
-      <div className="bg-gray-800 rounded-3xl shadow-2xl backdrop-blur-xl w-full max-w-4xl p-6 border border-gray-700">
-        {/* ✅ Шапка */}
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            EDMS Assistant
-          </h1>
-          {/* ✅ Форма авторизации */}
-          <AuthForm
-            userId={userId}
-            token={serviceToken}
-            onUserIdChange={updateUserId}
-            onTokenChange={setServiceToken}
-          />
-          {/* ✅ Thread ID */}
-          {threadId && (
-            <p className="text-sm text-gray-400 mt-2">
-              Thread ID: <span className="font-mono">{threadId}</span>
-            </p>
-          )}
-        </header>
+    return (
+        <div
+            className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white flex items-center justify-center p-4">
+            <div
+                className="bg-gray-800 rounded-3xl shadow-2xl backdrop-blur-xl w-full max-w-4xl p-6 border border-gray-700">
+                <header className="mb-6">
+                    <h1 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                        EDMS Assistant
+                    </h1>
+                    <AuthForm
+                        userId={userId}
+                        token={serviceToken}
+                        onUserIdChange={updateUserId}
+                        onTokenChange={setServiceToken}
+                    />
+                    {threadId && (
+                        <p className="text-sm text-gray-400 mt-2">
+                            Thread ID: <span className="font-mono">{threadId}</span>
+                        </p>
+                    )}
+                </header>
 
-        {/* ✅ Основной контент */}
-        <main className="flex-1 flex flex-col">
-          {/* ✅ История сообщений */}
-          <div className="bg-gray-700 rounded-2xl p-4 mb-4 flex-1 overflow-y-auto max-h-[calc(100vh-250px)]">
-            {messages.length === 0 ? (
-              <p className="text-gray-500 text-center mt-10">
-                Начните диалог с агентом...
-              </p>
-            ) : (
-              messages.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  role={msg.role}
-                  content={msg.content}
+                <main className="flex-1 flex flex-col">
+                    <div className="bg-gray-700 rounded-2xl p-4 mb-4 flex-1 overflow-y-auto max-h-[calc(100vh-250px)]">
+                        {messages.length === 0 ? (
+                            <p className="text-gray-500 text-center mt-10">
+                                Начните диалог с агентом...
+                            </p>
+                        ) : (
+                            messages.map((msg) => (
+                                <MessageBubble
+                                    key={msg.id}
+                                    role={msg.role}
+                                    content={msg.content}
+                                />
+                            ))
+                        )}
+                        {isLoading && (
+                            <div className="flex justify-start mb-4">
+                                <div className="bg-gray-600 text-gray-200 rounded-lg px-4 py-2">
+                                    <span className="loading loading-dots loading-sm"></span> Агент печатает...
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSubmit();
+                        }}
+                        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                    >
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                value={documentId}
+                                onChange={(e) => setDocumentId(e.target.value)}
+                                placeholder="ID документа (опционально)"
+                                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
+                            />
+                            <FileUploader file={file} onChange={setFile}/>
+                        </div>
+
+                        <div className="space-y-2">
+                            <input
+                                type="text"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                placeholder="Введите запрос..."
+                                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
+                                disabled={isLoading}
+                            />
+                            <div className="flex gap-2">
+                                <button
+                                    type="submit"
+                                    className={`px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={isLoading}
+                                >
+                                    Отправить
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={resetChat}
+                                    className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-xl transition-all duration-300"
+                                >
+                                    Сброс
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </main>
+            </div>
+
+            {/* ✅ Модальное окно уточнения */}
+            {requiresClarification && (
+                <ClarificationModal
+                    candidates={candidates}
+                    onSelect={(selection) => {
+                        handleClarify(selection); // ✅ Передаем выбор в hook
+                    }}
+                    onCancel={() => {
+                        setRequiresClarification(false);
+                    }}
                 />
-              ))
             )}
-            {isLoading && (
-              <div className="flex justify-start mb-4">
-                <div className="bg-gray-600 text-gray-200 rounded-lg px-4 py-2">
-                  <span className="loading loading-dots loading-sm"></span> Агент печатает...
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ✅ Форма ввода */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
-          >
-            {/* ✅ Левая колонка: ID документа, файл */}
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={documentId}
-                onChange={(e) => setDocumentId(e.target.value)}
-                placeholder="ID документа (опционально)"
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-              />
-              <FileUploader file={file} onChange={setFile} />
-            </div>
-
-            {/* ✅ Правая колонка: сообщение, кнопки */}
-            <div className="space-y-2">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Введите запрос..."
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-                disabled={isLoading}
-              />
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  className={`px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  disabled={isLoading}
-                >
-                  Отправить
-                </button>
-                <button
-                  type="button"
-                  onClick={resetChat}
-                  className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-xl transition-all duration-300"
-                >
-                  Сброс
-                </button>
-              </div>
-            </div>
-          </form>
-        </main>
-      </div>
-
-      {/* ✅ Модальное окно уточнения (вне основного контейнера, но поверх) */}
-      {requiresClarification && (
-        <ClarificationModal
-          candidates={candidates}
-          onSelect={(id) => {
-            handleClarify(id);
-          }}
-          onCancel={() => {
-          }}
-        />
-      )}
-    </div>
-  );
+        </div>
+    );
 }
 
 export default App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// // src/App.tsx
-//
-// // import React from 'react';
-// import { useChat } from './hooks/useChat';
-// import MessageBubble from './components/MessageBubble';
-// import ClarificationModal from './components/ClarificationModal';
-// import FileUploader from './components/FileUploader';
-// import AuthForm from './components/AuthForm';
-//
-//
-// function App() {
-//   const {
-//     messages,
-//     input,
-//     setInput,
-//     file,
-//     setFile,
-//     isLoading,
-//     handleSubmit,
-//     requiresClarification,
-//     candidates,
-//     handleClarify,
-//     resetChat,
-//     serviceToken,
-//     setServiceToken,
-//     documentId,
-//     setDocumentId,
-//     threadId,
-//     userId,
-//     updateUserId,
-//   } = useChat();
-//
-//   return (
-//     // ✅ Главный контейнер: центрирование, фон, минимальная высота
-//     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white flex items-center justify-center p-4">
-//       {/* ✅ Карточка: центрированная область с тенью и закруглёнными углами */}
-//       <div className="bg-gray-800 rounded-3xl shadow-2xl backdrop-blur-xl w-full max-w-4xl p-6 border border-gray-700">
-//         {/* ✅ Шапка */}
-//         <header className="mb-6">
-//           <h1 className="text-3xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-//             EDMS Assistant
-//           </h1>
-//           {/* ✅ Форма авторизации */}
-//           <AuthForm
-//             userId={userId}
-//             token={serviceToken}
-//             onUserIdChange={updateUserId}
-//             onTokenChange={setServiceToken}
-//           />
-//           {/* ✅ Thread ID */}
-//           {threadId && (
-//             <p className="text-sm text-gray-400 mt-2">
-//               Thread ID: <span className="font-mono">{threadId}</span>
-//             </p>
-//           )}
-//         </header>
-//
-//         {/* ✅ Основной контент */}
-//         <main className="flex-1 flex flex-col p-4">
-//           {/* ✅ История сообщений */}
-//           <div className="bg-gray-700 rounded-2xl p-4 mb-4 h-96 overflow-y-auto space-y-3">
-//             {messages.length === 0 ? (
-//               <p className="text-gray-500 text-center mt-10">
-//                 Начните диалог с агентом...
-//               </p>
-//             ) : (
-//               messages.map((msg) => (
-//                 <MessageBubble
-//                   key={msg.id}
-//                   role={msg.role}
-//                   content={msg.content}
-//                 />
-//               ))
-//             )}
-//             {isLoading && (
-//               <div className="flex justify-start mb-4">
-//                 <div className="bg-gray-600 text-gray-200 rounded-lg px-4 py-2">
-//                   <span className="loading loading-dots loading-sm"></span> Агент печатает...
-//                 </div>
-//               </div>
-//             )}
-//           </div>
-//
-//           {/* ✅ Форма ввода */}
-//           <form
-//             onSubmit={(e) => {
-//               e.preventDefault();
-//               // handleSubmit(input, documentId);
-//               handleSubmit();
-//             }}
-//             className="grid grid-cols-1 md:grid-cols-2 gap-4"
-//           >
-//             {/* ✅ Левая колонка: ID документа, файл */}
-//             <div className="space-y-2">
-//               <input
-//                 type="text"
-//                 value={documentId}
-//                 onChange={(e) => setDocumentId(e.target.value)}
-//                 placeholder="ID документа (опционально)"
-//                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-//               />
-//               <FileUploader file={file} onChange={setFile} />
-//             </div>
-//
-//             {/* ✅ Правая колонка: сообщение, кнопки */}
-//             <div className="space-y-2">
-//               <input
-//                 type="text"
-//                 value={input}
-//                 onChange={(e) => setInput(e.target.value)}
-//                 placeholder="Введите запрос..."
-//                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-300"
-//                 disabled={isLoading}
-//               />
-//               <div className="flex gap-2">
-//                 <button
-//                   type="submit"
-//                   className={`px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-300 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-//                   disabled={isLoading}
-//                 >
-//                   Отправить
-//                 </button>
-//                 <button
-//                   type="button"
-//                   onClick={resetChat}
-//                   className="px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-xl transition-all duration-300"
-//                 >
-//                   Сброс
-//                 </button>
-//               </div>
-//             </div>
-//           </form>
-//         </main>
-//       </div>
-//
-//       {/* ✅ Модальное окно уточнения (вне основного контейнера, но поверх) */}
-//       {requiresClarification && (
-//         <ClarificationModal
-//           candidates={candidates}
-//           onSelect={(id) => {
-//             handleClarify(id);
-//           }}
-//           onCancel={() => {
-//           }}
-//         />
-//       )}
-//     </div>
-//   );
-// }
-//
-// export default App;
