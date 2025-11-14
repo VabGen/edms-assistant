@@ -5,8 +5,9 @@ from src.edms_assistant.core.base_agent import BaseAgent
 
 
 class AgentRegistry:
-    """Централизованный реестр агентов с поддержкой безопасности и логирования"""
-
+    """
+    Централизованный реестр агентов с поддержкой безопасной инициализации.
+    """
     _instance = None
     _lock = threading.Lock()
 
@@ -20,114 +21,48 @@ class AgentRegistry:
 
     def __init__(self):
         if not self._initialized:
-            self._agents: Dict[str, Type[BaseAgent]] = {}
-            self._instances: Dict[str, BaseAgent] = {}
+            self._agent_classes: Dict[str, Type[BaseAgent]] = {}
+            self._agent_instances: Dict[str, BaseAgent] = {}
             self._initialized = True
 
     def register(self, name: str, agent_class: Type[BaseAgent]):
-        """Регистрация класса агента с валидацией"""
+        """
+        Регистрирует класс агента.
+        """
         if not issubclass(agent_class, BaseAgent):
-            raise TypeError(
-                f"Agent class must inherit from BaseAgent, got {agent_class}"
-            )
-
-        if name in self._agents:
-            import logging
-
-            logging.warning(f"Agent {name} is already registered, overwriting")
-
-        self._agents[name] = agent_class
+            raise TypeError(f"Agent class must inherit from BaseAgent, got {agent_class}")
+        self._agent_classes[name] = agent_class
+        # Не создаем экземпляр сразу, а создаем при первом запросе
 
     def get_agent_class(self, name: str) -> Optional[Type[BaseAgent]]:
-        """Получение класса агента"""
-        return self._agents.get(name)
+        """
+        Получает класс агента по имени.
+        """
+        return self._agent_classes.get(name)
 
-    def get_agent_instance(self, name: str, **kwargs) -> Optional[BaseAgent]:
-        """Получение экземпляра агента с lazy initialization"""
-        if name not in self._instances:
+    def get_agent_instance(self, name: str) -> Optional[BaseAgent]:
+        """
+        Получает экземпляр агента (создает при первом запросе).
+        """
+        if name not in self._agent_instances:
             agent_class = self.get_agent_class(name)
             if agent_class:
-                # Предполагаем, что у агента есть метод для получения LLM
+                # Предполагаем, что у BaseAgent есть конструктор с llm и tools
+                # Эти зависимости должны быть внедрены через DI или получены из инфраструктуры
                 from src.edms_assistant.infrastructure.llm.llm import get_llm
+                from src.edms_assistant.tools.factory import get_tools_for_agent  # <-- Фабрика инструментов
 
                 llm = get_llm()
-
-                # Получаем инструменты для агента
-                tools = self._get_agent_tools(name)
-
-                self._instances[name] = agent_class(llm=llm, tools=tools)
-        return self._instances.get(name)
-
-    def _get_agent_tools(self, agent_name: str) -> List:
-        """Получение инструментов для конкретного агента"""
-        # Импортируем инструменты в зависимости от типа агента
-        if agent_name == "document_agent":
-            from src.edms_assistant.tools.document import (
-                get_document_tool,
-                search_documents_tool,
-                create_document_tool,
-                update_document_tool,
-            )
-
-            return [
-                get_document_tool,
-                search_documents_tool,
-                create_document_tool,
-                update_document_tool,
-            ]
-        elif agent_name == "employee_agent":
-            from src.edms_assistant.tools.employee import (
-                get_employee_by_id_tool,
-                find_responsible_tool,
-                add_responsible_to_document_tool,
-            )
-
-            return [
-                get_employee_by_id_tool,
-                find_responsible_tool,
-                add_responsible_to_document_tool,
-            ]
-        elif agent_name == "attachment_agent":
-            from src.edms_assistant.tools.attachment import (
-                summarize_attachment_tool,
-                extract_and_summarize_file_tool,
-            )
-
-            return [summarize_attachment_tool, extract_and_summarize_file_tool]
-        elif agent_name == "main_planner_agent":
-            from src.edms_assistant.tools.document import (
-                get_document_tool,
-                search_documents_tool,
-            )
-            from src.edms_assistant.tools.employee import (
-                find_responsible_tool,
-                get_employee_by_id_tool,
-            )
-            from src.edms_assistant.tools.attachment import (
-                summarize_attachment_tool,
-                extract_and_summarize_file_tool,
-            )
-
-            return [
-                get_document_tool,
-                search_documents_tool,
-                find_responsible_tool,
-                get_employee_by_id_tool,
-                summarize_attachment_tool,
-                extract_and_summarize_file_tool,
-            ]
-        return []
+                tools = get_tools_for_agent(name) # <-- Получаем инструменты для конкретного агента
+                self._agent_instances[name] = agent_class(llm=llm, tools=tools)
+        return self._agent_instances.get(name)
 
     def get_all_agent_names(self) -> List[str]:
-        """Получение всех зарегистрированных агентов"""
-        return list(self._agents.keys())
-
-    def create_agent_executor(self, agent_name: str) -> Optional[BaseAgent]:
-        """Создание executor для агента"""
-        agent = self.get_agent_instance(agent_name)
-        if agent:
-            return agent
-        return None
+        """
+        Возвращает список всех зарегистрированных агентов.
+        """
+        return list(self._agent_classes.keys())
 
 
+# Глобальный экземпляр реестра
 agent_registry = AgentRegistry()

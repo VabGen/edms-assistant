@@ -1,5 +1,4 @@
 // src/components/AuthForm.tsx
-
 import React, { useState } from 'react';
 
 interface Props {
@@ -23,7 +22,7 @@ const AuthForm: React.FC<Props> = ({
     onUserIdChange(inputUserId);
     onTokenChange(inputToken);
     localStorage.setItem('edms_user_id', inputUserId);
-    localStorage.setItem('edms_service_token', inputToken);
+    localStorage.setItem('edms_service_token', inputToken); // <-- Сохраняем serviceToken
   };
 
   return (

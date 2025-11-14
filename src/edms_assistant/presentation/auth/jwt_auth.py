@@ -2,8 +2,11 @@
 import jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from fastapi import HTTPException, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, status
+# УБРАНО: from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+# УБРАНО: from src.edms_assistant.config.settings import settings
+# НЕТ: from src.edms_assistant.config.settings import settings в этом файле, если он импортируется в api.py
+# Лучше передавать settings как параметр или использовать глобальный доступ
 from src.edms_assistant.config.settings import settings
 import logging
 
@@ -48,33 +51,4 @@ def verify_edms_token(token: str) -> Dict[str, Any]:
         return {"token": token, "exp": None, "sub": "edms_user"}
 
 
-def verify_and_extract_user_info(
-        credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())
-) -> Dict[str, Any]:
-    """
-    Проверяет токен EDMS и возвращает информацию о пользователе
-    """
-    payload = verify_edms_token(credentials.credentials)
-
-    # Проверяем, есть ли user_id в payload
-    user_id = payload.get("sub")
-
-    if not user_id or user_id == "edms_user":
-        # Если это не JWT токен или нет sub, используем токен как идентификатор
-        # или извлекаем user_id из других источников в реальном приложении
-        user_id = payload.get("token", "unknown_user")
-
-    if not user_id or user_id == "unknown_user":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token: missing user_id"
-        )
-
-    return {
-        "user_id": user_id,
-        "token": credentials.credentials,
-        "exp": payload.get("exp"),
-        "iat": payload.get("iat"),
-        # По умолчанию - базовые разрешения
-        "permissions": ["document:read", "attachment:read"]
-    }
+# УБРАНО: verify_and_extract_user_info, так как теперь проверка делается в api.py напрямую

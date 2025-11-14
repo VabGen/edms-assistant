@@ -1,12 +1,13 @@
 // src/components/HITLModal.tsx
-
 import React, { useState } from 'react';
 
+// --- ИСПРАВЛЕНО: Убран onRequest из Props ---
 interface Props {
   onApprove: () => void;
   onEdit: (content: string) => void;
   onReject: () => void;
   onCancel: () => void;
+  // request?: any; // Можно добавить, если нужно отобразить детали запроса
 }
 
 const HITLModal: React.FC<Props> = ({
@@ -14,34 +15,35 @@ const HITLModal: React.FC<Props> = ({
   onEdit,
   onReject,
   onCancel,
+  // request, // Если нужно, используйте здесь
 }) => {
   const [editContent, setEditContent] = useState('');
-  const [currentMode, setCurrentMode] = useState<'approve' | 'edit' | 'reject' | null>(null);
+  const [mode, setMode] = useState<'select' | 'edit'>('select'); // Режим: выбор действия или редактирование
 
   const handleApprove = () => {
     onApprove();
-    setCurrentMode(null);
+    setMode('select'); // Сброс режима
   };
 
-  const handleEdit = () => {
+  const handleEditSubmit = () => {
     if (editContent.trim()) {
       onEdit(editContent);
       setEditContent('');
-      setCurrentMode(null);
+      setMode('select'); // Сброс режима
     }
   };
 
   const handleReject = () => {
     onReject();
-    setCurrentMode(null);
+    setMode('select'); // Сброс режима
   };
 
   const handleCancel = () => {
-    setCurrentMode(null);
-    onCancel(); // ✅ Вызываем onCancel из пропсов
+    setMode('select'); // Сброс режима
+    onCancel();
   };
 
-  if (currentMode === 'edit') {
+  if (mode === 'edit') {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-gray-700">
@@ -55,13 +57,13 @@ const HITLModal: React.FC<Props> = ({
           />
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => setCurrentMode(null)}
+              onClick={() => setMode('select')}
               className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-xl transition-colors duration-300"
             >
               Назад
             </button>
             <button
-              onClick={handleEdit}
+              onClick={handleEditSubmit}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors duration-300"
             >
               Сохранить
@@ -85,7 +87,7 @@ const HITLModal: React.FC<Props> = ({
             ✅ Подтвердить
           </button>
           <button
-            onClick={() => setCurrentMode('edit')}
+            onClick={() => setMode('edit')}
             className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-xl transition-colors duration-300 text-left"
           >
             ✏️ Редактировать

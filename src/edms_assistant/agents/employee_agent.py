@@ -2,7 +2,7 @@
 import re
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.types import interrupt
+from langgraph.types import interrupt  # Импортируем interrupt
 from src.edms_assistant.core.state import GlobalState
 from src.edms_assistant.core.base_agent import BaseAgent
 from src.edms_assistant.infrastructure.llm.llm import get_llm
@@ -11,6 +11,7 @@ from src.edms_assistant.tools.employee import (
     find_responsible_tool,
     add_responsible_to_document_tool
 )
+from src.edms_assistant.tools.document import get_document_tool  # Импортируем инструмент документа
 import json
 import logging
 
@@ -27,65 +28,107 @@ class EmployeeAgent(BaseAgent):
         self.add_tool(get_employee_by_id_tool)
         self.add_tool(find_responsible_tool)
         self.add_tool(add_responsible_to_document_tool)
+        # Добавляем инструмент документа для проверки
+        self.add_tool(get_document_tool)
 
     async def process(self, state: GlobalState, **kwargs) -> Dict[str, Any]:
         """Обработка запроса к сотрудникам"""
         try:
             user_message = state.user_message
 
-            # Проверяем, является ли сообщение UUID сотрудника
+            # Проверяем, является ли сообщение UUID
             uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-            employee_ids = re.findall(uuid_pattern, user_message.lower())
+            uuid_match = re.search(uuid_pattern, user_message.lower())
 
-            if employee_ids:
-                # Если найден ID сотрудника - получаем информацию о нем
-                employee_id = employee_ids[0]
-                tool_input = {
-                    "employee_id": employee_id,
-                    "service_token": state.service_token
-                }
-                employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
-                return {
-                    "messages": [HumanMessage(content=user_message), AIMessage(content=employee_result)],
-                    "requires_execution": False,
-                    "requires_clarification": False
-                }
+            if uuid_match:
+                uuid_value = uuid_match.group(0)
 
-            # Проверяем, является ли сообщение числовым уточнением (например, "2")
-            # и есть ли в состоянии hitl_request (означает, что это ответ на прерывание)
-            if user_message.strip().isdigit() and state.hitl_request:
-                selected_number = int(user_message.strip())
+                # Проверяем, является ли это числовым уточнением (например, "2") и есть ли hitl_request
+                if user_message.strip().isdigit() and state.hitl_request and state.hitl_request.get("type") == "employee_selection":
+                    selected_number = int(user_message.strip())
+                    candidates = state.hitl_request.get("candidates", [])
 
-                # Получаем кандидатов из предыдущего прерывания
-                candidates = state.hitl_request.get("candidates", [])
+                    if candidates and 1 <= selected_number <= len(candidates):
+                        selected_candidate = candidates[selected_number - 1]
+                        candidate_id = selected_candidate.get("id")
 
-                if candidates and 1 <= selected_number <= len(candidates):
-                    selected_candidate = candidates[selected_number - 1]
+                        if candidate_id:
+                            # Получаем полную информацию о выбранном сотруднике
+                            tool_input = {
+                                "employee_id": candidate_id,
+                                "service_token": state.service_token
+                            }
+                            employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
 
-                    # Получаем полную информацию о выбранном сотруднике
-                    tool_input = {
-                        "employee_id": selected_candidate["id"],
-                        "service_token": state.service_token
-                    }
-                    employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
+                            return {
+                                "messages": [HumanMessage(content=user_message),
+                                             AIMessage(
+                                                 content=f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}")],
+                                "requires_execution": False,
+                                "requires_clarification": False,
+                                "hitl_pending": False,  # Сбрасываем ожидание HITL
+                                "hitl_request": None,
+                                "hitl_decisions": []
+                            }
+                    else:
+                        # Если выбор некорректен, возвращаем прерывание снова
+                        return interrupt({
+                            "type": "employee_selection",
+                            "candidates": candidates,
+                            "message": "Пожалуйста, укажите корректный номер из списка (1, 2, 3 и т.д.)."
+                        })
 
-                    return {
-                        "messages": [HumanMessage(content=user_message),
-                                     AIMessage(
-                                         content=f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}")],
-                        "requires_execution": False,
-                        "requires_clarification": False,
-                        "hitl_pending": False,  # Сбрасываем ожидание HITL
-                        "hitl_request": None,
-                        "hitl_decisions": []
-                    }
+                # Если сообщение - UUID, но не числовое уточнение, проверяем, является ли это ID сотрудника
+                # или пытаемся использовать как ID документа (если не из контекста уточнения)
                 else:
-                    # Если выбор некорректен, возвращаем прерывание снова
-                    return interrupt({
-                        "type": "employee_selection",
-                        "candidates": candidates,
-                        "message": "Пожалуйста, укажите корректный номер из списка (1, 2, 3 и т.д.)."
-                    })
+                    # Сначала пробуем получить сотрудника по UUID
+                    try:
+                        tool_input = {
+                            "employee_id": uuid_value,
+                            "service_token": state.service_token
+                        }
+                        employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
+
+                        # Если успешно, возвращаем информацию о сотруднике
+                        return {
+                            "messages": [HumanMessage(content=user_message), AIMessage(content=employee_result)],
+                            "requires_execution": False,
+                            "requires_clarification": False
+                        }
+                    except Exception as e:
+                        # Если не удалось получить сотрудника, пробуем как документ (только если не из уточнения)
+                        if not state.hitl_request: # Не из контекста уточнения
+                            try:
+                                doc_result = await get_document_tool.ainvoke({
+                                    "document_id": uuid_value,
+                                    "service_token": state.service_token
+                                })
+                                # Если успешно как документ, возвращаем информацию о документе
+                                return {
+                                    "messages": [HumanMessage(content=user_message), AIMessage(content=doc_result)],
+                                    "requires_execution": False,
+                                    "requires_clarification": False
+                                }
+                            except Exception as doc_e:
+                                # Если и документ не найден, возвращаем ошибку
+                                error_msg = f"Сотрудник или документ с ID {uuid_value} не найден. Ошибка сотрудника: {str(e)}, Ошибка документа: {str(doc_e)}"
+                                return {
+                                    "messages": [HumanMessage(content=user_message), AIMessage(content=error_msg)],
+                                    "requires_execution": False,
+                                    "requires_clarification": False,
+                                    "error": error_msg
+                                }
+                        else:
+                            # Если UUID пришло из контекста уточнения, но не является корректным выбором
+                            # и не найден как сотрудник, возвращаем ошибку
+                            error_msg = f"Сотрудник с ID {uuid_value} не найден."
+                            return {
+                                "messages": [HumanMessage(content=user_message), AIMessage(content=error_msg)],
+                                "requires_execution": False,
+                                "requires_clarification": False,
+                                "error": error_msg
+                            }
+
 
             # Проверяем, есть ли в сообщении запрос на поиск сотрудника
             search_keywords = ["найти", "поиск", "сотрудник", "человек", "ответственный", "работник", "иванов", "иван",
@@ -124,11 +167,11 @@ class EmployeeAgent(BaseAgent):
                             # Если найдено несколько сотрудников - ВЫЗЫВАЕМ ПРЕРЫВАНИЕ
                             if len(search_data) > 1:
                                 candidates_list = "\n".join([
-                                    f"{i + 1}. {emp.get('first_name', '')} {emp.get('middle_name', '')} {emp.get('last_name', '')}"
+                                    f"{i + 1}. {emp.get('first_name', '')} {emp.get('middle_name', '')} {emp.get('last_name', '')} (ID: {emp.get('id', 'N/A')})"
                                     for i, emp in enumerate(search_data)
                                 ])
 
-                                # Возвращаем interrupt, чтобы остановить выполнение и дождаться выбора
+                                # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Возвращаем interrupt, чтобы остановить выполнение и дождаться выбора
                                 return interrupt({
                                     "type": "employee_selection",
                                     "candidates": search_data,

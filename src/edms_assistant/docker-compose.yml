@@ -8,18 +8,29 @@ services:
       - "8000:8000"
     environment:
       - PYTHONPATH=/app/src
-      - LANGSMITH_TRACING=true
-      - LANGSMITH_PROJECT=edms-agent
-      - VLLM__GENERATIVE_BASE_URL=http://model-generative:8000/v1
-      - VLLM__EMBEDDING_BASE_URL=http://model-embedding:8000/v1
-      - EDMS__BASE_URL=http://edms-backend:8098
-      - SECURITY__JWT_SECRET=${JWT_SECRET}
+      # ... другие переменные ...
+      - DATABASE__URL=postgresql+asyncpg://user:password@db:5432/edms_assistant_db
     volumes:
-      - ./data:/app/data
+      - ./:/app
       - ./logs:/app/logs
     depends_on:
+      - db
       - redis
       - rabbitmq
+      - model-generative
+      - model-embedding
+    restart: unless-stopped
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: edms_assistant_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: unless-stopped
 
   redis:
@@ -36,12 +47,27 @@ services:
       - "5672:5672"
       - "15672:15672"
     environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: password
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped
 
+  model-generative:
+    # ... ваш vLLM сервис ...
+    image: vllm/vllm-openai:latest
+    # ... команды и порты ...
+    ports:
+      - "8000:8000"
+
+  model-embedding:
+    # ... ваш vLLM сервис ...
+    image: vllm/vllm-openai:latest
+    # ... команды и порты ...
+    ports:
+      - "8001:8000"
+
 volumes:
+  postgres_data:
   redis_data:
   rabbitmq_data:

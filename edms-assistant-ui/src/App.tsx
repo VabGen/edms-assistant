@@ -1,13 +1,13 @@
 // src/App.tsx
-
 import {useChat} from './hooks/useChat';
 import MessageBubble from './components/MessageBubble';
 import ClarificationModal from './components/ClarificationModal';
 import FileUploader from './components/FileUploader';
 import AuthForm from './components/AuthForm';
-import HITLModal from './components/HITLModal';
+import HITLModal from './components/HITLModal'; // <-- Убедитесь, что импортирован
 
 function App() {
+    // --- ИСПРАВЛЕНО: Добавлены setRequiresClarification и setRequiresHITL в деструктуризацию ---
     const {
         messages,
         input,
@@ -29,7 +29,8 @@ function App() {
         threadId,
         userId,
         updateUserId,
-        setRequiresClarification,
+        setRequiresClarification, // <-- ДОБАВЛЕНО
+        setRequiresHITL,          // <-- ДОБАВЛЕНО
     } = useChat();
 
     return (
@@ -127,15 +128,12 @@ function App() {
             </div>
 
             {/* ✅ Модальное окно уточнения */}
-            {requiresClarification && (
+            {/* --- ИСПРАВЛЕНО: Добавлена проверка candidates --- */}
+            {requiresClarification && candidates && candidates.length > 0 && (
                 <ClarificationModal
                     candidates={candidates}
-                    onSelect={(selection) => {
-                        handleClarify(selection);
-                    }}
-                    onCancel={() => {
-                        setRequiresClarification(false);
-                    }}
+                    onSelect={handleClarify}
+                    onCancel={() => setRequiresClarification(false)} // <-- ИСПРАВЛЕНО: используем функцию из хука
                 />
             )}
 
@@ -145,7 +143,7 @@ function App() {
                     onApprove={() => handleHITLDecision('approve')}
                     onEdit={(content) => handleHITLDecision('edit', content)}
                     onReject={() => handleHITLDecision('reject')}
-                    onCancel={() => setRequiresClarification(false)}
+                    onCancel={() => setRequiresHITL(false)} // <-- ИСПРАВЛЕНО: используем функцию из хука
                 />
             )}
         </div>

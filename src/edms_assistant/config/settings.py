@@ -5,6 +5,13 @@ from typing import Optional, Literal
 import uuid
 
 
+class DatabaseConfig(BaseModel):
+    url: str = Field(
+        default="postgresql+asyncpg://user:password@localhost:5432/edms_assistant_db",
+        description="Connection string for PostgreSQL database"
+    )
+
+
 class VLLMConfig(BaseModel):
     generative_base_url: HttpUrl = Field(
         default="http://model-generative.shared.du.iba/v1",
@@ -83,6 +90,9 @@ class Settings(BaseSettings):
 
     # Security
     security: SecurityConfig
+
+    # Database
+    database: DatabaseConfig
 
     # Agent
     agent_enable_tracing: bool = Field(default=True, description="Enable agent tracing")
