@@ -1,58 +1,56 @@
 # src/edms_assistant/core/state.py
-from typing import List, Dict, Any, Optional, Union
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from typing import Dict, Any, List, Optional, Annotated
 from pydantic import BaseModel, Field
 from uuid import UUID
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langgraph.graph import add_messages  # Убедимся, что импортирован
+
+
+class HitlOptions(BaseModel):
+    question: str
+    options: List[str]
+    action: str
 
 
 class GlobalState(BaseModel):
-    # === Идентификация и авторизация ===
+    # === Основные поля ===
     user_id: UUID
     service_token: str
-    document_id: Optional[str] = None
-
-    # === Входные данные от пользователя ===
+    document_id: Optional[UUID] = None
     user_message: str
     uploaded_file_path: Optional[str] = None
 
-    # === История сообщений (LangGraph) ===
-    messages: List[BaseMessage] = Field(default_factory=list)
+    # === LangGraph Messages (важно для совместимости) ===
+    messages: Annotated[List[BaseMessage], add_messages] = Field(default_factory=list)
 
-    # === Состояние выполнения ===
+    # === План и выполнение ===
     pending_plan: Optional[Dict[str, Any]] = None
     requires_execution: bool = False
 
-    # === Уточнения и прерывания ===
+    # === Уточнения (Clarification) ===
     requires_clarification: bool = False
-    clarification_context: Optional[Dict[str, Any]] = Field(default=None)
+    clarification_context: Optional[Dict[str, Any]] = None
 
-    # === Human-in-the-Loop (HITL) ===
+    # === HITL (Human-in-the-Loop) ===
     hitl_pending: bool = False
-    hitl_request: Optional[Dict[str, Any]] = Field(default=None)
+    hitl_request: Optional[Dict[str, Any]] = None
     hitl_decisions: List[Dict[str, Any]] = Field(default_factory=list)
 
     # === Ошибки ===
     error: Optional[str] = None
 
-    # === Агенты ===
-    current_agent: str = "main_planner_agent"
+    # === Текущий агент ===
+    current_agent: Optional[str] = None
     available_agents: List[str] = Field(default_factory=list)
+
+    # === LangGraph State ===
+    next_node: Optional[str] = None
+    waiting_for_hitl_response: bool = False
 
     # === NLU и RAG ===
     nlu_intent: Optional[str] = None
-    nlu_entities: Dict[str, Any] = Field(default_factory=dict)
-    rag_context: Optional[Dict[str, Any]] = Field(default=None)
-
-    # === Контекст для следующего шага (например, после уточнения) ===
-    next_node: Optional[str] = Field(default="planning") # Для использования в routing_node
-
-    # === Дополнительно для универсальности ===
-    agent_context: Dict[str, Any] = Field(default_factory=dict) # Для хранения данных конкретного агента
-    execution_history: List[Dict[str, Any]] = Field(default_factory=list) # Лог выполнения шагов
+    nlu_confidence: Optional[float] = 0.0
+    rag_context: List[Dict[str, Any]] = Field(default_factory=list)  # Результаты RAG
 
     class Config:
         arbitrary_types_allowed = True
-        json_encoders = {
-            UUID: str,
-            BaseMessage: lambda m: m.model_dump(mode="json", exclude_unset=True)
-        }

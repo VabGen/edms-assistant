@@ -3,15 +3,15 @@ from typing import Dict, Any
 from langchain_core.messages import AIMessage
 from langgraph.graph import StateGraph, START, END
 from src.edms_assistant.core.state import GlobalState
-from src.edms_assistant.core.registry import agent_registry
-from src.edms_assistant.core.nlu.intent_classifier import IntentClassifier
+from src.edms_assistant.core.agent_registry import agent_registry
+from src.edms_assistant.core.nlu_classifier import NLUClassifier
 from src.edms_assistant.infrastructure.checkpointer.postgres_checkpointer import get_checkpointer
 import logging
 
 logger = logging.getLogger(__name__)
 
 # Инициализируем NLU классификатор
-nlu_classifier = IntentClassifier()
+nlu_classifier = NLUClassifier()
 
 
 async def routing_node(state: GlobalState) -> Dict[str, Any]:
@@ -52,7 +52,7 @@ async def routing_node(state: GlobalState) -> Dict[str, Any]:
             "nlu_intent": predicted_intent,
             "nlu_entities": entities,
             "current_agent": target_agent,  # Устанавливаем текущего агента
-            "next_node": target_agent      # Устанавливаем следующий узел для conditional edge
+            "next_node": target_agent  # Устанавливаем следующий узел для conditional edge
         }
 
     except Exception as e:
@@ -110,7 +110,7 @@ def create_agent_graph():
     # route_after_router теперь использует state.next_node
     def route_after_router(state: GlobalState) -> str:
         # Получаем агента из состояния (установленного в routing_node)
-        next_node_name = getattr(state, 'next_node', 'main_planner_agent') # Fallback на main_planner
+        next_node_name = getattr(state, 'next_node', 'main_planner_agent')  # Fallback на main_planner
         # Проверяем, существует ли узел с таким именем
         # LangGraph сам проверит это, но можно добавить валидацию
         # Возвращаем имя узла, к которому нужно перейти
@@ -135,7 +135,7 @@ def create_agent_graph():
     graph.add_conditional_edges(
         "router",
         route_after_router,
-        {"dynamic_agent": "dynamic_agent"} # Маршрут всегда ведет к dynamic_agent
+        {"dynamic_agent": "dynamic_agent"}  # Маршрут всегда ведет к dynamic_agent
     )
 
     # Прямой переход от dynamic_agent к END

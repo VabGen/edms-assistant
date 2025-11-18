@@ -1,6 +1,6 @@
-# src/edms_assistant/config/settings.py
+# src/edms_assistant/core/settings.py
 from pydantic import BaseModel, Field, HttpUrl, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, Literal
 import uuid
 
@@ -129,11 +129,11 @@ class Settings(BaseSettings):
 
     # Storage & Checkpointing
     store_type: Literal["memory", "sqlite", "postgres"] = Field(
-        default="memory",  # Для продакшена использовать postgres
+        default="memory",  #
         description="Type of state storage to use"
     )
     checkpointer_type: Literal["memory", "sqlite", "postgres"] = Field(
-        default="memory",  # Для продакшена использовать postgres
+        default="memory",
         description="Type of checkpoint storage to use"
     )
     postgres_connection_string: Optional[str] = Field(
@@ -141,12 +141,11 @@ class Settings(BaseSettings):
         description="PostgreSQL connection string for persistent storage"
     )
 
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "env_nested_delimiter": "__",
-        "extra": "ignore",
-    }
+    # Настройки CLI / RAG
+    faiss_index_path: str = "data/faiss_index"
+    service_token_for_indexing: str = ""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_nested_delimiter="__")
 
 
 settings = Settings()

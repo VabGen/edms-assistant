@@ -1,143 +1,102 @@
 # src/edms_assistant/presentation/api.py
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.security import HTTPBearer
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from uuid import UUID
-import tempfile
-import shutil
-import os
-from datetime import datetime
+from pydantic import BaseModel
+from langchain_core.messages import HumanMessage, AIMessage
+from langgraph.types import Interrupt
+from src.edms_assistant.core.state import GlobalState, HitlOptions
+from src.edms_assistant.core.graph import create_agent_graph
+from src.edms_assistant.agents.agent_factory import AgentFactory
+from src.edms_assistant.utils.auth import verify_and_extract_user_info
+from src.edms_assistant.utils.file_utils import save_uploaded_file, validate_file_type, cleanup_temp_file
+import uuid
 import logging
-from langchain_core.messages import HumanMessage
-from starlette import status
-from starlette.middleware.cors import CORSMiddleware
-from langgraph.types import Command, Interrupt  # Импортируем Interrupt
-
-from src.edms_assistant.agents.agent import create_agent_graph
-from src.edms_assistant.core.state import GlobalState
-from src.edms_assistant.config.settings import settings
-from src.edms_assistant.core.registry import agent_registry
-from src.edms_assistant.agents.agent_factory import register_all_agents
-# УБРАНО: from src.edms_assistant.presentation.auth.jwt_auth import verify_and_extract_user_info
-# ВМЕСТО ЭТОГО, импортируем саму функцию verify_edms_token
-from src.edms_assistant.presentation.auth.jwt_auth import verify_edms_token
-from src.edms_assistant.utils.file_utils import save_uploaded_file
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="EDMS Assistant API",
-    version="3.0.0",
-    description="Production-ready EDMS Assistant with Human-in-the-Loop capabilities"
-)
+app = FastAPI(title="EDMS Assistant API", version="1.0.0")
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    allow_origin_regex=r"https?://.*\.example\.com"
-)
-
-# Security
 security = HTTPBearer()
 
-register_all_agents()
+
+# === Модель для ответа ===
+class ChatResponse(BaseModel):
+    response: Optional[str] = None
+    requires_clarification: bool = False
+    clarification_type: Optional[str] = None
+    message: Optional[str] = None
+    candidates: Optional[List[Dict[str, Any]]] = None
+    requires_hitl_decision: bool = False
+    hitl_request: Optional[Dict[str, Any]] = None
+    thread_id: str
+    status: str = "success"
 
 
-@app.post("/chat")
+@app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
         user_message: str = Form(..., description="Сообщение пользователя"),
         user_id: str = Form(..., description="ID пользователя из EDMS"),
-        edms_token: str = Form(..., description="Токен пользователя из EDMS"), # <-- Принимаем токен как Form параметр
+        edms_token: str = Form(..., description="Токен пользователя из EDMS"),
         document_id: Optional[str] = Form(None, description="ID документа для взаимодействия"),
         agent_type: str = Form("main_planner_agent", description="Тип агента для обработки"),
         thread_id: Optional[str] = Form(None, description="ID диалога для продолжения"),
-        file: Optional[UploadFile] = File(None, description="Файл для обработки"),
-        # УБРАНО: user_info: dict = Depends(verify_and_extract_user_info)
-        # ВМЕСТО ЭТОГО: ВАЛИДИРУЕМ ТОКЕН ВНУТРИ ФУНКЦИИ
+        uploaded_file: Optional[UploadFile] = File(None, description="Загруженный файл для анализа")
 ):
-    """
-    Универсальный эндпоинт чата с поддержкой:
-    - EDMS аутентификации
-    - Загрузки файлов
-    - Прерываний (уточнений и HITL) через interrupt
-    """
-
-    # --- НОВАЯ АУТЕНТИФИКАЦИЯ: Валидируем токен напрямую ---
-    try:
-        user_info_from_token = verify_edms_token(edms_token)
-    except HTTPException:
-        # Если verify_edms_token выбросит HTTPException (например, expired), она автоматически передастся клиенту
-        raise
-    except Exception:
-        # На всякий случай, если verify_edms_token выбросит что-то другое
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    # --- ПРОВЕРКА: user_id из формы совпадает с user_id из токена ---
-    token_user_id = user_info_from_token.get("sub") or user_info_from_token.get("id")
-    if not token_user_id:
-        raise HTTPException(status_code=401, detail="Token does not contain user_id")
-
-    if user_id != token_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User ID mismatch"
-        )
-    # ---
+    logger.info(
+        f"[API] chat_endpoint called with user_message: '{user_message[:50]}...', user_id: {user_id}, thread_id: {thread_id}")
 
     # Валидация thread_id
-    if thread_id:
-        try:
-            UUID(thread_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid thread_id format")
+    if not thread_id:
+        thread_id = str(uuid.uuid4())
+        logger.info(f"[API] Generated new thread_id: {thread_id}")
 
-    # Обработка загрузки файла
+    # Подготовка конфигурации
+    config = {"configurable": {"thread_id": thread_id, "user_id": str(user_id)}}
+
+    # Подготовка состояния
+    try:
+        user_uuid = UUID(user_id)
+        doc_uuid = UUID(document_id) if document_id else None
+    except ValueError:
+        logger.error(f"[API] Invalid user_id or document_id format: user_id={user_id}, document_id={document_id}")
+        raise HTTPException(status_code=400, detail="Invalid user_id or document_id format")
+
     uploaded_file_path = None
-    if file:
-        uploaded_file_path = await save_uploaded_file(file)
+    if uploaded_file:
+        if not validate_file_type(uploaded_file.filename):
+            logger.error(f"[API] Unsupported file type: {uploaded_file.filename}")
+            raise HTTPException(status_code=400, detail="Unsupported file type")
+        uploaded_file_path = await save_uploaded_file(uploaded_file)
+        logger.info(f"[API] File uploaded to: {uploaded_file_path}")
 
-    # Подготовка конфигурации для LangGraph
-    config = {
-        "configurable": {
-            "thread_id": thread_id or user_id,
-            "user_id": user_id
-        }
-    }
-
-    # --- ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ ИЗ ЧЕКПОИНТЕРА ---
-    agent_graph_instance = create_agent_graph() # <-- ИСПРАВЛЕНО: переименовал переменную
+    agent_graph = create_agent_graph()  # Создаём граф
+    logger.info(f"[API] Created agent graph instance.")
 
     try:
-        checkpoint_tuple = await agent_graph_instance.checkpointer.aget_tuple(config) # <-- ИСПРАВЛЕНО: использую instance
+        checkpoint_tuple = await agent_graph.checkpointer.aget_tuple(config)
+        logger.info(f"[API] Retrieved checkpoint tuple: {checkpoint_tuple is not None}")
         if checkpoint_tuple and checkpoint_tuple.state:
-            # Восстанавливаем состояние из чекпоинтера
             saved_state_values = checkpoint_tuple.state.get("values", {})
+            logger.info(f"[API] Found saved state values keys: {list(saved_state_values.keys())}")
+            # Восстанавливаем состояние
             restored_state = GlobalState(**saved_state_values)
-
-            # --- ОБНОВЛЕНИЕ ТОЛЬКО НЕОБХОДИМЫХ ПОЛЕЙ ---
             restored_state.user_message = user_message
             restored_state.messages.append(HumanMessage(content=user_message))
             if uploaded_file_path:
                 restored_state.uploaded_file_path = uploaded_file_path
             if document_id:
-                restored_state.document_id = document_id
-            # service_token и user_id уже проверены выше
-            # restored_state.service_token = edms_token # <-- НЕ ОБНОВЛЯЕМ, если не нужно
-            # restored_state.user_id = UUID(user_id) # <-- НЕ ОБНОВЛЯЕМ, если не нужно
-
-            initial_state = restored_state # <-- ИСПРАВЛЕНО: переименовал переменную
-            logger.info(f"State restored from checkpoint for thread {thread_id}, hitl_request: {restored_state.hitl_request is not None}")
+                restored_state.document_id = UUID(document_id)
+            restored_state.service_token = edms_token
+            initial_state = restored_state
+            logger.info(f"[API] Restored state from checkpoint for thread {thread_id}.")
         else:
-            # Если состояние не найдено, создаем новое
-            logger.info(f"No checkpoint found for thread {thread_id}, creating initial state")
-            initial_state = GlobalState( # <-- ИСПРАВЛЕНО: переименовал переменную
-                user_id=UUID(user_id),
+            # Создаём новое состояние
+            initial_state = GlobalState(
+                user_id=user_uuid,
                 service_token=edms_token,
-                document_id=document_id,
+                document_id=doc_uuid,
                 user_message=user_message,
                 uploaded_file_path=uploaded_file_path,
                 messages=[HumanMessage(content=user_message)],
@@ -147,22 +106,23 @@ async def chat_endpoint(
                 clarification_context=None,
                 error=None,
                 current_agent=agent_type,
-                available_agents=agent_registry.get_all_agent_names(),
+                available_agents=AgentFactory.get_available_agents(),  # Используем фабрику
                 hitl_pending=False,
                 hitl_request=None,
                 hitl_decisions=[],
+                next_node="planning",
+                waiting_for_hitl_response=False,
                 nlu_intent=None,
-                nlu_entities={},
-                rag_context=None,
-                next_step_context=None
+                nlu_confidence=0.0,
+                rag_context=[],
             )
+            logger.info(f"[API] Created new initial state for thread {thread_id}.")
     except Exception as e:
-        logger.error(f"Error restoring state from checkpoint: {e}", exc_info=True)
-        logger.warning("Using initial state due to checkpoint error")
-        initial_state = GlobalState( # <-- ИСПРАВЛЕНО: переименовал переменную
-            user_id=UUID(user_id),
+        logger.error(f"[API] Error restoring state from checkpoint: {e}", exc_info=True)
+        initial_state = GlobalState(
+            user_id=user_uuid,
             service_token=edms_token,
-            document_id=document_id,
+            document_id=doc_uuid,
             user_message=user_message,
             uploaded_file_path=uploaded_file_path,
             messages=[HumanMessage(content=user_message)],
@@ -172,165 +132,110 @@ async def chat_endpoint(
             clarification_context=None,
             error=None,
             current_agent=agent_type,
-            available_agents=agent_registry.get_all_agent_names(),
+            available_agents=AgentFactory.get_available_agents(),  # Используем фабрику
             hitl_pending=False,
             hitl_request=None,
             hitl_decisions=[],
+            next_node="planning",
+            waiting_for_hitl_response=False,
             nlu_intent=None,
-            nlu_entities={},
-            rag_context=None,
-            next_step_context=None
+            nlu_confidence=0.0,
+            rag_context=[],
+        )
+        logger.info(f"[API] Created fallback initial state for thread {thread_id} after error.")
+
+    logger.info(
+        f"[API] About to invoke graph with initial state messages count: {len(initial_state.messages)}, user_message: '{initial_state.user_message[:50]}...'")
+
+    try:
+        # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Ловим Interrupt ---
+        result = await agent_graph.ainvoke(initial_state, config=config)
+        logger.info(
+            f"[API] Graph invocation successful. Result type: {type(result)}, keys: {getattr(result, '__dict__', dir(result)) if hasattr(result, '__dict__') else 'No __dict__'}")
+    except Interrupt as e:
+        logger.info(f"[API] Caught interrupt during graph invocation: {e.value}")
+        # ... (обработка прерывания как раньше) ...
+        interrupt_value = e.value
+        interrupt_type = interrupt_value.get("type", "")
+
+        if interrupt_type in ["employee_selection", "document_selection", "attachment_selection"]:
+            message = interrupt_value.get("message", "Требуется уточнение")
+            candidates = interrupt_value.get("candidates",
+                                             interrupt_value.get("documents", interrupt_value.get("attachments", [])))
+            updated_state_for_checkpoint = initial_state.model_copy(update={
+                "waiting_for_hitl_response": True,
+                "hitl_request": interrupt_value
+            })
+            await agent_graph.aupdate_state(config, updated_state_for_checkpoint)
+            logger.info(
+                f"State explicitly saved to checkpoint for thread {thread_id} after {interrupt_type} interrupt.")
+
+            return ChatResponse(
+                requires_clarification=True,
+                clarification_type=interrupt_type,
+                message=message,
+                candidates=candidates,
+                thread_id=thread_id,
+                status="awaiting_selection"
+            )
+        else:
+            return ChatResponse(
+                requires_clarification=True,
+                clarification_type="generic",
+                message=interrupt_value.get("message", "Требуется уточнение"),
+                thread_id=thread_id,
+                status="awaiting_input"
+            )
+    except Exception as e:
+        logger.error(f"[API] Error during graph invocation: {e}", exc_info=True)
+        # Возвращаем ответ с ошибкой
+        return ChatResponse(
+            response="Произошла ошибка при обработке запроса.",
+            requires_clarification=False,
+            thread_id=thread_id,
+            status="error"
         )
 
-    try:
-        # Запуск графа агента с восстановленным или новым состоянием
-        # ПЕРЕХВАТЫВАЕМ Interrupt ИСКЛЮЧЕНИЕ - УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК
-        try:
-            result = await agent_graph_instance.ainvoke(initial_state, config=config) # <-- ИСПРАВЛЕНО: использую instance
-        except Interrupt as e: # <-- ПЕРЕХВАТЫВАЕМ Interrupt
-            # Если произошло прерывание, возвращаем информацию клиенту
-            interrupt_value = e.value # <-- ИСПРАВЛЕНО: использую e.value
-            interrupt_type = interrupt_value.get("type", "")
-
-            # Пример обработки разных типов прерываний
-            if interrupt_type == "employee_selection":
-                candidates = interrupt_value.get("candidates", [])
-                message = interrupt_value.get("message", "Требуется выбор сотрудника")
-
-                return {
-                    "requires_clarification": True,
-                    "clarification_type": "employee_selection",
-                    "message": message,
-                    "candidates": candidates,
-                    "thread_id": config["configurable"]["thread_id"],
-                    "status": "awaiting_selection"
-                }
-            elif interrupt_type == "hitl_decision":
-                # Это прерывание для HITL решения
-                return {
-                    "requires_hitl_decision": True,
-                    "hitl_request": interrupt_value, # <-- ИСПРАВЛЕНО: использую interrupt_value
-                    "thread_id": config["configurable"]["thread_id"],
-                    "user_info": {
-                        "user_id": user_info_from_token.get("sub", user_id), # Используем из токена или из формы
-                        "permissions": user_info_from_token.get("permissions", ["document:read"]) # Базовые права
-                    },
-                    "status": "awaiting_decision"
-                }
-            else:
-                # Неизвестный тип прерывания - универсальный обработчик
-                message = interrupt_value.get("message", "Требуется уточнение")
-
-                return {
-                    "requires_clarification": True,
-                    "clarification_type": "generic",
-                    "message": message,
-                    "interrupt_value": interrupt_value,  # Возвращаем полное значение для гибкости
-                    "thread_id": config["configurable"]["thread_id"],
-                    "status": "awaiting_input"
-                }
-
-        # Если interrupt не произошло, обрабатываем обычный результат
-        # Возвращаем финальный ответ (если выполнение завершилось без прерывания)
+        # --- ИСПРАВЛЕНО: Работаем с result как с GlobalState или Dict ---
+        # LangGraph должен вернуть GlobalState, но если возвращается Dict, обрабатываем оба случая.
+    if isinstance(result, GlobalState):
+        logger.info(f"[API] Result is GlobalState. Messages count: {len(result.messages)}")
+        final_messages = result.messages  # Получаем из экземпляра GlobalState
+    elif isinstance(result, dict):
+        logger.info(f"[API] Result is dict. Keys: {list(result.keys())}")
+        # Если возвращается dict, ищем ключ 'messages'
         final_messages = result.get("messages", [])
-        if final_messages:
-            last_ai_message = [m for m in final_messages if hasattr(m, 'content')]
-            if last_ai_message:
-                response_text = last_ai_message[-1].content
-            else:
-                response_text = str(final_messages[-1])
-        else:
-            response_text = "Агент не смог сгенерировать ответ."
+        logger.info(f"[API] Final messages from result dict: {final_messages}")
+        logger.info(f"[API] Types of messages in final_messages: {[type(m) for m in final_messages]}")
+        # Добавь эту строку:
+        logger.info(
+            f"[API] Content of messages in final_messages: {[getattr(m, 'content', 'NO_CONTENT_ATTR') for m in final_messages]}")
+    else:
+        # Если что-то другое - ошибка
+        logger.error(f"[API] Graph returned unexpected type: {type(result)}")
+        return ChatResponse(
+            response="Агент вернул неожиданный тип данных.",
+            requires_clarification=False,
+            thread_id=thread_id,
+            status="error"
+        )
 
-        return {
-            "response": response_text,
-            "requires_clarification": False,
-            "requires_hitl_decision": False,
-            "thread_id": config["configurable"]["thread_id"],
-            "status": "completed"
-        }
+    last_ai_message = [m for m in final_messages if isinstance(m, AIMessage)]
+    if last_ai_message:
+        response_text = last_ai_message[-1].content
+        logger.info(f"[API] Generated response text: '{response_text[:100]}...'")
+    else:
+        response_text = "Агент не смог сгенерировать ответ."
+        logger.warning(f"[API] No AIMessage found in final_messages. Returned default response.")
 
-    except Exception as e:
-        logger.error(f"Error during agent execution: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Agent execution error: {str(e)}")
+    # Удаляем файл после обработки (если был)
+    if uploaded_file_path:
+        cleanup_temp_file(uploaded_file_path)
+        logger.info(f"[API] Cleaned up uploaded file: {uploaded_file_path}")
 
-
-@app.post("/resume")
-async def resume_endpoint(
-        decisions: list = Form(..., description="Решения пользователя для HITL/уточнений"),
-        thread_id: str = Form(..., description="ID диалога для возобновления"),
-        user_id: str = Form(..., description="ID пользователя из EDMS"),
-        edms_token: str = Form(..., description="Токен пользователя из EDMS"),
-        # УБРАНО: user_info: dict = Depends(verify_and_extract_user_info)
-        # ВМЕСТО ЭТОГО: ВАЛИДИРУЕМ ТОКЕН ВНУТРИ ФУНКЦИИ
-):
-    """
-    Универсальный эндпоинт для возобновления выполнения после прерывания (уточнений или HITL)
-    """
-    try:
-        # --- АУТЕНТИФИКАЦИЯ ДЛЯ RESUME ---
-        try:
-            user_info_from_token = verify_edms_token(edms_token) # <-- ИСПРАВЛЕНО: переименовал переменную
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(status_code=401, detail="Invalid token for resume")
-
-        # --- ПРОВЕРКА: user_id совпадает ---
-        token_user_id = user_info_from_token.get("sub") or user_info_from_token.get("id") # <-- ИСПРАВЛЕНО: переименовал переменную
-        if not token_user_id:
-            raise HTTPException(status_code=401, detail="Token does not contain user_id")
-
-        if user_id != token_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User ID mismatch for resume"
-            )
-        # ---
-
-        # Проверяем thread_id
-        UUID(thread_id)
-
-        # Подготовка конфигурации
-        config = {
-            "configurable": {
-                "thread_id": thread_id,
-                "user_id": user_id
-            }
-        }
-
-        # Подготовка команды для возобновления
-        command = Command(resume={"decisions": decisions})
-        agent_graph_instance = create_agent_graph() # <-- ИСПРАВЛЕНО: переименовал переменную
-        result = await agent_graph_instance.ainvoke(command, config=config) # <-- ИСПРАВЛЕНО: использую instance
-
-        # Возвращаем результат
-        final_messages = result.get("messages", [])
-        if final_messages:
-            last_ai_message = [m for m in final_messages if hasattr(m, 'content')]
-            if last_ai_message:
-                response_text = last_ai_message[-1].content
-            else:
-                response_text = str(final_messages[-1])
-        else:
-            response_text = "Агент завершил обработку после принятия решений."
-
-        return {
-            "response": response_text,
-            "thread_id": thread_id, # <-- ИСПРАВЛЕНО: использую thread_id, а не threadId
-            "status": "resumed"
-        }
-
-    except Exception as e:
-        logger.error(f"Error during resume: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Resume execution error: {str(e)}")
-
-
-@app.get("/health")
-async def health_check():
-    """Проверка состояния сервиса"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "3.0.0"  # Версия API
-    }
+    return ChatResponse(
+        response=response_text,
+        requires_clarification=False,
+        thread_id=thread_id,
+        status="completed"
+    )

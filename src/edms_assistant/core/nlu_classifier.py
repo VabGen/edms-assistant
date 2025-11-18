@@ -1,43 +1,54 @@
 # src/edms_assistant/core/nlu_classifier.py
-import json
 from typing import Dict, Any
+from langchain_core.messages import SystemMessage, HumanMessage as LC_HumanMessage, HumanMessage
 from src.edms_assistant.infrastructure.llm.llm import get_llm
+import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NLUClassifier:
+    """
+    Класс для классификации намерений пользователя.
+    """
+
     def __init__(self, llm=None):
         self.llm = llm or get_llm()
 
-    async def classify_intent(self, message: str) -> Dict[str, Any]:
-        system_prompt = f"""
-        Классифицируй намерение пользователя в системе управления документами (EDMS).
-        Возможные намерения:
-        - employee_search: Поиск сотрудника (например, "найти Иванова", "кто ответственный за X")
-        - document_search: Поиск документа (например, "найти документ X", "где находится Y")
-        - document_creation: Создание документа (например, "создай договор", "новый акт")
-        - document_approval: Согласование документа (например, "подписать", "утвердить")
-        - general_question: Общий вопрос (например, "что ты умеешь", "как дела")
-        - unknown: Неизвестное намерение
-
-        Сообщение пользователя: "{message}"
-
-        Верни JSON:
-        {{
-            "intent": "employee_search | document_search | document_creation | document_approval | general_question | unknown",
-            "confidence": 0.0-1.0,
-            "entities": {{...}} // Извлеченные сущности (например, ID документа, имя сотрудника)
-        }}
+    async def classify_intent(self, user_message: str) -> Dict[str, Any]:
         """
-
+        Определяет намерение пользователя с помощью LLM.
+        Возвращает словарь с 'intent' и 'confidence'.
+        """
+        system_prompt = f"""
+        Ты - помощник, который определяет намерение пользователя из его сообщения.
+        Сообщение пользователя: "{user_message}"
+        Доступные намерения:
+        - find_employee
+        - find_document
+        - analyze_attachment
+        - general_query
+        - search_contract_terms
+        Верни JSON в формате: {{"intent": "имя_намерения", "confidence": 0.95}}
+        """
         try:
-            response = await self.llm.ainvoke([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ])
-            return json.loads(str(response.content))
+            response = await self.llm.ainvoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=user_message)])
+            content_str = str(response.content)
+            start = content_str.find('{')
+            end = content_str.rfind('}') + 1
+            if start != -1 and end != 0:
+                json_str = content_str[start:end]
+                nlu_result = json.loads(json_str)
+                logger.info(f"NLU classified '{user_message}' as {nlu_result}")
+                return nlu_result
+            else:
+                logger.warning(f"NLU returned non-JSON: {content_str}")
+                return {"intent": "general_query", "confidence": 0.5}
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse NLU response: {content_str}")
+            return {"intent": "general_query", "confidence": 0.5}
         except Exception as e:
-            print(f"NLU classification error: {e}")
-            return {"intent": "unknown", "confidence": 0.0, "entities": {}}
-
-
-nlu_classifier = NLUClassifier()
+            logger.error(f"Error in NLU classification: {e}", exc_info=True)
+            return {"intent": "general_query", "confidence": 0.5}

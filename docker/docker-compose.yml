@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # Твой ассистент
+  edms-assistant:
+    build: ../src/edms_assistant
+    ports:
+      - "8000:8000"
+    environment:
+      - EDMS_BASE_URL=http://edms-service:8080 # Адрес внутреннего сервиса EDMS
+      - EDMS_TIMEOUT=30
+      - STORE_TYPE=postgres # или memory
+      - CHECKPOINTER_TYPE=postgres # или memory
+      - POSTGRES_CONNECTION_STRING=postgresql://user:password@postgres:5432/edms_agent
+      - JWT_SECRET_KEY=your-secret-key-here # или через секрет
+    depends_on:
+      - postgres
+      # - edms-service # если у тебя есть отдельный EDMS
+    volumes:
+      # Если нужно, монтируем директории (например, для логов)
+      # - ./logs:/app/logs
+      - temp_uploads:/tmp/edms_agent_uploads
+    restart: unless-stopped
+
+  # База данных для сохранения состояния
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: edms_agent
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_/var/lib/postgresql/data
+    ports:
+      - "5432:5432" # Для отладки, в проде не открывать
+    restart: unless-stopped
+
+volumes:
+  postgres_:
+  temp_uploads:

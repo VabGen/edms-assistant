@@ -15,3 +15,15 @@ uv pip install -r requirements.txt
 # Create .env file
 cp .env.example .env
 # Edit .env with your configuration
+
+# Показать помощь
+edms-assistant --help
+
+# Запустить индексацию (передав токен)
+edms-assistant index --token your_edms_service_token
+
+# Указать путь к индексу
+edms-assistant index --token your_edms_service_token --path ./my_custom_index
+
+# Проверить состояние
+edms-assistant health

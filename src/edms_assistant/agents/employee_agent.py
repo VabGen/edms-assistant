@@ -1,307 +1,148 @@
 # src/edms_assistant/agents/employee_agent.py
-import re
 from typing import Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.types import interrupt  # Импортируем interrupt
+from src.edms_assistant.agents.base_agent import BaseAgent
 from src.edms_assistant.core.state import GlobalState
-from src.edms_assistant.core.base_agent import BaseAgent
-from src.edms_assistant.infrastructure.llm.llm import get_llm
-from src.edms_assistant.tools.employee import (
-    get_employee_by_id_tool,
-    find_responsible_tool,
-    add_responsible_to_document_tool
-)
-from src.edms_assistant.tools.document import get_document_tool  # Импортируем инструмент документа
+from src.edms_assistant.tools.employee import find_responsible_tool
+from langgraph.types import interrupt
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
-
 class EmployeeAgent(BaseAgent):
-    """Агент для работы с сотрудниками и персоналом"""
-
-    def __init__(self, llm=None, tools=None):
-        super().__init__(llm or get_llm(), tools)
-        self.llm = llm or get_llm()
-        # Добавляем инструменты
-        self.add_tool(get_employee_by_id_tool)
-        self.add_tool(find_responsible_tool)
-        self.add_tool(add_responsible_to_document_tool)
-        # Добавляем инструмент документа для проверки
-        self.add_tool(get_document_tool)
+    def __init__(self, llm=None, agent_name: str = "employee_agent"):
+        super().__init__(llm, agent_name)
+        # Инструменты автоматически загружаются через BaseAgent и tool_registry
 
     async def process(self, state: GlobalState, **kwargs) -> Dict[str, Any]:
-        """Обработка запроса к сотрудникам"""
-        try:
-            user_message = state.user_message
+        user_message = state.user_message
+        logger.info(
+            f"[AGENT] EmployeeAgent.process: Received message: '{user_message[:50]}...', waiting_for_hitl_response: {state.waiting_for_hitl_response}")
 
-            # Проверяем, является ли сообщение UUID
-            uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-            uuid_match = re.search(uuid_pattern, user_message.lower())
-
-            if uuid_match:
-                uuid_value = uuid_match.group(0)
-
-                # Проверяем, является ли это числовым уточнением (например, "2") и есть ли hitl_request
-                if user_message.strip().isdigit() and state.hitl_request and state.hitl_request.get("type") == "employee_selection":
-                    selected_number = int(user_message.strip())
-                    candidates = state.hitl_request.get("candidates", [])
-
-                    if candidates and 1 <= selected_number <= len(candidates):
-                        selected_candidate = candidates[selected_number - 1]
-                        candidate_id = selected_candidate.get("id")
-
-                        if candidate_id:
-                            # Получаем полную информацию о выбранном сотруднике
-                            tool_input = {
-                                "employee_id": candidate_id,
-                                "service_token": state.service_token
-                            }
-                            employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
-
-                            return {
-                                "messages": [HumanMessage(content=user_message),
-                                             AIMessage(
-                                                 content=f"Выбран сотрудник: {selected_candidate.get('first_name', '')} {selected_candidate.get('middle_name', '')} {selected_candidate.get('last_name', '')}\n{employee_result}")],
-                                "requires_execution": False,
-                                "requires_clarification": False,
-                                "hitl_pending": False,  # Сбрасываем ожидание HITL
-                                "hitl_request": None,
-                                "hitl_decisions": []
-                            }
-                    else:
-                        # Если выбор некорректен, возвращаем прерывание снова
-                        return interrupt({
-                            "type": "employee_selection",
-                            "candidates": candidates,
-                            "message": "Пожалуйста, укажите корректный номер из списка (1, 2, 3 и т.д.)."
-                        })
-
-                # Если сообщение - UUID, но не числовое уточнение, проверяем, является ли это ID сотрудника
-                # или пытаемся использовать как ID документа (если не из контекста уточнения)
-                else:
-                    # Сначала пробуем получить сотрудника по UUID
-                    try:
-                        tool_input = {
-                            "employee_id": uuid_value,
-                            "service_token": state.service_token
-                        }
-                        employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
-
-                        # Если успешно, возвращаем информацию о сотруднике
-                        return {
-                            "messages": [HumanMessage(content=user_message), AIMessage(content=employee_result)],
-                            "requires_execution": False,
-                            "requires_clarification": False
-                        }
-                    except Exception as e:
-                        # Если не удалось получить сотрудника, пробуем как документ (только если не из уточнения)
-                        if not state.hitl_request: # Не из контекста уточнения
-                            try:
-                                doc_result = await get_document_tool.ainvoke({
-                                    "document_id": uuid_value,
-                                    "service_token": state.service_token
-                                })
-                                # Если успешно как документ, возвращаем информацию о документе
-                                return {
-                                    "messages": [HumanMessage(content=user_message), AIMessage(content=doc_result)],
-                                    "requires_execution": False,
-                                    "requires_clarification": False
-                                }
-                            except Exception as doc_e:
-                                # Если и документ не найден, возвращаем ошибку
-                                error_msg = f"Сотрудник или документ с ID {uuid_value} не найден. Ошибка сотрудника: {str(e)}, Ошибка документа: {str(doc_e)}"
-                                return {
-                                    "messages": [HumanMessage(content=user_message), AIMessage(content=error_msg)],
-                                    "requires_execution": False,
-                                    "requires_clarification": False,
-                                    "error": error_msg
-                                }
-                        else:
-                            # Если UUID пришло из контекста уточнения, но не является корректным выбором
-                            # и не найден как сотрудник, возвращаем ошибку
-                            error_msg = f"Сотрудник с ID {uuid_value} не найден."
-                            return {
-                                "messages": [HumanMessage(content=user_message), AIMessage(content=error_msg)],
-                                "requires_execution": False,
-                                "requires_clarification": False,
-                                "error": error_msg
-                            }
-
-
-            # Проверяем, есть ли в сообщении запрос на поиск сотрудника
-            search_keywords = ["найти", "поиск", "сотрудник", "человек", "ответственный", "работник", "иванов", "иван",
-                               "смирнов"]
-            if any(keyword in user_message.lower() for keyword in search_keywords):
-                # Извлекаем компоненты имени с помощью LLM
-                name_components = await self._extract_name_with_llm(user_message)
-
-                if name_components and (name_components.get("last_name") or name_components.get("first_name")):
-                    # Подготавливаем параметры для инструмента
-                    tool_input = {
-                        "last_name": name_components.get("last_name", ""),
-                        "first_name": name_components.get("first_name", ""),
-                        "service_token": state.service_token
-                    }
-
-                    # Убираем пустые значения, но оставляем хотя бы last_name или first_name
-                    tool_input = {k: v for k, v in tool_input.items() if v}
-
-                    search_result = await find_responsible_tool.ainvoke(tool_input)
-
-                    # Парсим результат
-                    try:
-                        search_data = json.loads(search_result)
-
-                        if "error" in search_data:
-                            return {
-                                "messages": [HumanMessage(content=user_message),
-                                             AIMessage(content=f"Ошибка поиска: {search_data['error']}")],
-                                "requires_execution": False,
-                                "requires_clarification": False
-                            }
-
-                        # Проверяем, есть ли найденные сотрудники
-                        if isinstance(search_data, list) and len(search_data) > 0:
-                            # Если найдено несколько сотрудников - ВЫЗЫВАЕМ ПРЕРЫВАНИЕ
-                            if len(search_data) > 1:
-                                candidates_list = "\n".join([
-                                    f"{i + 1}. {emp.get('first_name', '')} {emp.get('middle_name', '')} {emp.get('last_name', '')} (ID: {emp.get('id', 'N/A')})"
-                                    for i, emp in enumerate(search_data)
-                                ])
-
-                                # --- КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: Возвращаем interrupt, чтобы остановить выполнение и дождаться выбора
-                                return interrupt({
-                                    "type": "employee_selection",
-                                    "candidates": search_data,
-                                    "message": f"В организации работает несколько человек с подходящими данными. Уточните, пожалуйста, о ком именно вы спрашиваете. Вот варианты:\n\n{candidates_list}\n\nОтправьте номер (например, '1', '2')."
-                                })
-                            else:
-                                # Если найден один сотрудник - возвращаем его данные
-                                employee_info = search_data[0]
-                                full_name = f"{employee_info.get('last_name', '')} {employee_info.get('first_name', '')} {employee_info.get('middle_name', '')}".strip()
-                                tool_input = {
-                                    "employee_id": employee_info["id"],
-                                    "service_token": state.service_token
-                                }
-                                employee_result = await get_employee_by_id_tool.ainvoke(tool_input)
-
-                                return {
-                                    "messages": [HumanMessage(content=user_message),
-                                                 AIMessage(
-                                                     content=f"Найден сотрудник: {full_name}\n{employee_result}")],
-                                    "requires_execution": False,
-                                    "requires_clarification": False
-                                }
-                        else:
-                            # Если ничего не найдено
-                            query_desc = ", ".join([f"{k}: {v}" for k, v in name_components.items() if v])
-                            return {
-                                "messages": [HumanMessage(content=user_message),
-                                             AIMessage(
-                                                 content=f"Сотрудников с параметрами '{query_desc}' не найдено.")],
-                                "requires_execution": False,
-                                "requires_clarification": False
-                            }
-                    except json.JSONDecodeError:
-                        return {
-                            "messages": [HumanMessage(content=user_message),
-                                         AIMessage(content=f"Ошибка обработки результата поиска: {search_result}")],
-                            "requires_execution": False,
-                            "requires_clarification": False
-                        }
-                else:
-                    # Если не удалось извлечь имя, возвращаем сообщение о необходимости уточнения
+        # --- Проверяем, ждём ли мы ответ на прерывание ---
+        if state.waiting_for_hitl_response and user_message.isdigit():
+            logger.info("[AGENT] EmployeeAgent: Handling HITL response.")
+            choice_num = int(user_message)
+            last_hitl_request = state.hitl_request
+            if last_hitl_request and last_hitl_request.get("type") == "employee_selection":
+                candidates = last_hitl_request.get("candidates", [])
+                if 1 <= choice_num <= len(candidates):
+                    selected_employee = candidates[choice_num - 1]
+                    response_text = f"Выбран сотрудник: {selected_employee.get('first_name')} {selected_employee.get('last_name')} ({selected_employee.get('position')})."
                     return {
-                        "messages": [HumanMessage(content=user_message)],
-                        "requires_execution": False,
-                        "requires_clarification": True,
-                        "clarification_context": {
-                            "type": "employee_search_needed",
-                            "message": "Пожалуйста, укажите фамилию, имя или другую информацию для поиска сотрудника."
-                        }
+                        "messages": [HumanMessage(content=user_message), AIMessage(content=response_text)],
+                        "waiting_for_hitl_response": False,
+                        "hitl_request": None,
+                        "requires_clarification": False,
+                        "hitl_pending": False,
                     }
-
-            # По умолчанию - возвращаем сообщение о необходимости уточнения
-            return {
-                "messages": [HumanMessage(content=user_message)],
-                "requires_execution": False,
-                "requires_clarification": True,
-                "clarification_context": {
-                    "type": "employee_search_needed",
-                    "message": "Пожалуйста, уточните, кого именно вы ищете (фамилия, имя, должность и т.д.)."
+                else:
+                    return {
+                        "messages": [HumanMessage(content=user_message), AIMessage(content="Неверный номер. Пожалуйста, выберите из списка.")],
+                        "requires_clarification": True,
+                    }
+            else:
+                return {
+                    "messages": [HumanMessage(content=user_message), AIMessage(content="Не ожидалось числовое сообщение. Пожалуйста, уточните запрос.")],
+                    "requires_clarification": True
                 }
-            }
+
+        # --- Оригинальная логика ---
+        try:
+            name_parts = await self._extract_name_with_llm(user_message)
+            search_query = f"{name_parts.get('first_name', '')} {name_parts.get('last_name', '')}".strip()
+
+            if not search_query:
+                logger.warning("[AGENT] EmployeeAgent: Could not extract name from message.")
+                return {
+                    "messages": [HumanMessage(content=user_message), AIMessage(
+                        content="Не удалось извлечь имя сотрудника из сообщения. Пожалуйста, уточните.")],
+                    "requires_clarification": True,
+                }
+
+            logger.info(f"[AGENT] EmployeeAgent: Searching for employees with query: '{search_query}'")
+            search_result = await find_responsible_tool.ainvoke({
+                "query": search_query,
+                "service_token": state.service_token
+            })
+
+            logger.info(
+                f"[AGENT] EmployeeAgent: Raw search result: {search_result[:200]}...")  # Логируем начало результата
+
+            search_data = json.loads(search_result)
+            logger.info(f"[AGENT] EmployeeAgent: Parsed search data: {search_data}")
+
+            if isinstance(search_data, list) and len(search_data) > 0:
+                if len(search_data) > 1:
+                    logger.info(
+                        f"[AGENT] EmployeeAgent: Found multiple employees ({len(search_data)}), triggering interrupt.")
+                    candidates_list = "".join([
+                        f"{i + 1}. {emp.get('first_name', '')} {emp.get('last_name', '')} ({emp.get('position', '')})\n"
+                        for i, emp in enumerate(search_data)
+                    ])
+                    return interrupt({
+                        "type": "employee_selection",
+                        "candidates": search_data,
+                        "message": f"В организации работает несколько человек с подходящими данными. Уточните, пожалуйста, о ком именно вы спрашиваете. Вот варианты:\n{candidates_list}Отправьте номер (например, '1', '2').",
+                        "initiated_by_agent": "employee_agent"
+                    })
+                else:
+                    logger.info(f"[AGENT] EmployeeAgent: Found single employee: {search_data[0]}")
+                    employee_info = search_data[0]
+                    response_text = f"Найден сотрудник: {employee_info.get('first_name')} {employee_info.get('last_name')} ({employee_info.get('position')})"
+                    return {
+                        "messages": [HumanMessage(content=user_message), AIMessage(content=response_text)],
+                        "requires_clarification": False
+                    }
+            else:
+                logger.info("[AGENT] EmployeeAgent: No employees found.")
+                return {
+                    "messages": [HumanMessage(content=user_message), AIMessage(content="Сотрудник не найден.")],
+                    "requires_clarification": False
+                }
 
         except Exception as e:
-            # Обработка Interrupt исключений
-            from langgraph.types import Interrupt
-            if isinstance(e, Interrupt):
-                # Это прерывание - возвращаем его как результат
-                return interrupt(e.value)
-
+            logger.error(f"[AGENT] Ошибка обработки сотрудника: {e}", exc_info=True)
             error_msg = f"Ошибка обработки сотрудника: {str(e)}"
             return {
-                "messages": [HumanMessage(content=user_message),
-                             AIMessage(content=error_msg)],
-                "requires_execution": False,
+                "messages": [HumanMessage(content=user_message), AIMessage(content=error_msg)],
                 "requires_clarification": False,
                 "error": str(e)
             }
 
     async def _extract_name_with_llm(self, message: str) -> Dict[str, str]:
-        """Использует LLM для извлечения компонентов имени из сообщения пользователя"""
+        from langchain_core.messages import SystemMessage, HumanMessage as LC_HumanMessage
         system_prompt = f"""
-        Ты - ассистент для извлечения информации о сотруднике из сообщения пользователя.
-        Твоя задача - извлечь фамилию, имя и отчество (если есть) из сообщения.
-
-        Сообщение пользователя: "{message}"
-
-        Верни JSON в формате:
-        {{
-            "last_name": "фамилия",
-            "first_name": "имя", 
-            "middle_name": "отчество"
-        }}
-
-        Если компонент не найден, используй пустую строку.
-        Если в сообщении несколько возможных имен, выбери наиболее вероятное.
-        Если пользователь указывает только фамилию, возвращай её в поле last_name.
+        Ты - помощник, который извлекает компоненты имени из сообщения пользователя.
+        Извлекай только имя и фамилию, игнорируя другие слова.
+        Возвращай JSON в формате: {{"first_name": "...", "last_name": "..."}}
+        Если имя или фамилия не найдены, верни пустую строку для соответствующего поля.
         """
-
+        response = await self.llm.ainvoke([SystemMessage(content=system_prompt), LC_HumanMessage(content=message)])
         try:
-            response = await self.llm.ainvoke([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": message}
-            ])
-
-            response_content = str(response.content)
-            # Парсим JSON ответа
-            extracted_data = json.loads(response_content)
-
-            # Убираем пустые значения
-            return {k: v for k, v in extracted_data.items() if v}
-
-        except Exception as e:
-            # Если LLM не вернул JSON, пробуем простой парсинг
+            content_str = str(response.content)
+            start = content_str.find('{')
+            end = content_str.rfind('}') + 1
+            if start != -1 and end != 0:
+                json_str = content_str[start:end]
+                extracted = json.loads(json_str)
+                return extracted
+            else:
+                import re
+                words = message.split()
+                names = [word for word in words if len(word) > 2 and word[0].isupper() and re.match(r'^[А-ЯЁ][а-яё]+$', word, re.IGNORECASE)]
+                if len(names) >= 2:
+                    return {"first_name": names[0], "last_name": names[1]}
+                elif len(names) == 1:
+                    return {"last_name": names[0]}
+                else:
+                    return {}
+        except json.JSONDecodeError:
             import re
-            search_keywords = ["найти", "поиск", "сотрудник", "человек", "ответственный", "работник", "искать"]
-            message_lower = message.lower()
-
-            for keyword in search_keywords:
-                if keyword in message_lower:
-                    pos = message_lower.find(keyword)
-                    remaining = message[pos + len(keyword):].strip()
-                    words = remaining.split()
-                    for word in words:
-                        if len(word) > 2 and word[0].isupper() and re.match(r'^[А-ЯЁ][а-яё]+', word):
-                            return {"last_name": word}
-
-            # Если ничего не найдено, проверим, может быть, это просто фамилия
             words = message.split()
             for word in words:
-                if len(word) > 2 and word[0].isupper() and re.match(r'^[А-ЯЁ][а-яё]+', word):
+                if len(word) > 2 and word[0].isupper() and re.match(r'^[А-ЯЁ][а-яё]+$', word, re.IGNORECASE):
                     return {"last_name": word}
-
             return {}

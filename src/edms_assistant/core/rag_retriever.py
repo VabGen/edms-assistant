@@ -1,22 +1,53 @@
 # src/edms_assistant/core/rag_retriever.py
-from typing import List, Dict, Any
-from src.edms_assistant.infrastructure.vector_store.pgvector_store import PGVectorStore
-from src.edms_assistant.infrastructure.llm.llm import get_llm
+from typing import List, Dict, Any, Optional
+from langchain_core.embeddings import Embeddings
+from langchain_community.vectorstores import FAISS  # Используем FAISS
+from langchain_core.documents import Document
+from src.edms_assistant.core.settings import settings
+from src.edms_assistant.core.document_indexer import DocumentIndexer
+import logging
 
+logger = logging.getLogger(__name__)
 
 class RAGRetriever:
-    def __init__(self, vector_store: PGVectorStore = None):
-        self.vector_store = vector_store or PGVectorStore()
-        self.embedding_model = get_llm()
+    """
+    Класс для выполнения RAG (Retrieval-Augmented Generation).
+    Поиск релевантных фрагментов текста из документов по запросу пользователя.
+    Теперь использует FAISS.
+    """
+    def __init__(self, embeddings: Embeddings, indexer: Optional[DocumentIndexer] = None):
+        self.embeddings = embeddings
+        self.indexer = indexer or DocumentIndexer(self.embeddings)
+        # Загружаем векторный индекс при инициализации
+        self.vector_store: Optional[FAISS] = self.indexer.load_vector_store()
+        if not self.vector_store:
+            logger.warning(f"Векторный индекс по умолчанию не найден. Используется пустой индекс.")
 
-    async def retrieve(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    async def asearch(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Поиск релевантных документов/фрагментов по запросу пользователя.
+        Асинхронный поиск релевантных фрагментов по запросу.
+        Возвращает список словарей с контентом и метаданными.
         """
-        query_embedding = await self.embedding_model.embed_query(query)
-        results = await self.vector_store.asimilarity_search_by_vector(query_embedding, k=top_k)
-        # Преобразуем результаты в удобный формат
-        return [{"content": doc.page_content, "metadata": doc.metadata} for doc in results]
+        logger.info(f"RAG search for query: '{query[:50]}...' (top_k={top_k})")
+        if not self.vector_store:
+            logger.warning("Векторный индекс не загружен. Возвращаю пустой результат.")
+            return []
 
+        try:
+            # Выполняем поиск
+            documents = await self.vector_store.asimilarity_search(query, k=top_k)
+            results = [
+                {
+                    "content": doc.page_content,
+                    "metadata": doc.metadata
+                }
+                for doc in documents
+            ]
+            logger.info(f"RAG search returned {len(results)} results.")
+            return results
+        except Exception as e:
+            logger.error(f"Error during RAG search: {e}", exc_info=True)
+            return []
 
-rag_retriever = RAGRetriever()
+# Глобальный экземпляр (опционально, можно создавать по требованию)
+# rag_retriever = RAGRetriever()

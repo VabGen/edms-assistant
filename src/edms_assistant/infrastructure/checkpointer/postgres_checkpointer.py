@@ -1,7 +1,7 @@
 # src/edms_assistant/infrastructure/checkpointer/postgres_checkpointer.py
 from langgraph.checkpoint.memory import MemorySaver # Импортируем MemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver # Пока оставим, на случай если заработает
-from src.edms_assistant.config.settings import settings
+from edms_assistant.core.settings import settings
 import logging
 
 logger = logging.getLogger(__name__)

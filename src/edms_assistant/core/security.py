@@ -4,22 +4,26 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer
-from src.edms_assistant.config.settings import settings
+from edms_assistant.core.settings import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
 
 # --- НОВАЯ ФУНКЦИЯ: Получение токена из запроса ---
 async def get_token_from_request(request: Request) -> str:
@@ -41,6 +45,7 @@ async def get_token_from_request(request: Request) -> str:
         detail="Token not found in header or form-data",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
 
 # --- Обновлённая функция verify_token ---
 async def verify_token(request: Request = Depends(), token: str = Depends(get_token_from_request)):
