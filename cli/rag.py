@@ -277,11 +277,6 @@ async def postprocess_llm_response(
     if references is None:
         references = {}
 
-    # УБРАТЬ: не отбрасываем контекст, если is_relevant=False
-    # if not is_relevant:
-    #     references = {}
-    #     context_str = ""
-
     prompt_references = (
         "You are an advanced language model tasked with providing a final, "
         "well-structured answer based on the given content.\n\n"
