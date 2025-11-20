@@ -18,7 +18,7 @@ class VLLMConfig(BaseModel):
         description="Base URL for generative model API"
     )
     generative_model: str = Field(
-        default="generative-model",  # Обновлено на актуальное имя
+        default="generative-model",
         description="Generative model identifier"
     )
     embedding_base_url: HttpUrl = Field(

@@ -13,7 +13,7 @@ try:
     import docx2txt
     from PyPDF2 import PdfReader
 except ImportError:
-    logger.warning("Не удалось импортировать модули docx2txt и PyPDF2")
+    logger.warning("Не удалось импортировать модули doc и PyPDF2")
     docx2txt = None
     PdfReader = None
 

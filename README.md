@@ -27,3 +27,9 @@ edms-assistant index --token your_edms_service_token --path ./my_custom_index
 
 # Проверить состояние
 edms-assistant health
+
+uv sync --extra dev
+
+# В PowerShell
+ 
+.venv312\Scripts\Activate.ps1
