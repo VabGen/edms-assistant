@@ -41,6 +41,9 @@ dependencies = [
     "cryptography>=42.0.0",
     "PyJWT>=2.9.0",
     "typer>=0.20.0",
+    "jose>=1.0.0",
+    "passlib>=1.7.4",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]

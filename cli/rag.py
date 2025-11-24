@@ -85,7 +85,7 @@ class ModelClient:
 
 # === Глобальные переменные ===
 
-KNOWLEDGE_BASE_FILE = r"D:\project\edms-assistant\cli\doc\СЭД.docx"
+KNOWLEDGE_BASE_FILE = r"/backend/data/documents/СЭД.docx"
 VECTOR_STORE_DIR = r"D:\project\edms-assistant\cli\vector"
 
 DOCS_IN_RETRIEVER = 15

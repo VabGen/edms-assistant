@@ -1,10 +1,10 @@
-# src/edms_assistant/cli/main.py
+# srccc/edms_assistant/cli/main.py
 import asyncio
 import typer
 from typing_extensions import Annotated
-from src.edms_assistant.core.document_indexer import DocumentIndexer
-from src.edms_assistant.infrastructure.llm.llm import get_llm
-from src.edms_assistant.core.settings import settings
+from srccc.edms_assistant.core.document_indexer import DocumentIndexer
+from srccc.edms_assistant.infrastructure.llm.llm import get_llm
+from srccc.edms_assistant.core.settings import settings
 
 app = typer.Typer()
 
@@ -59,7 +59,7 @@ def health():
         # Простая проверка LLM
         llm = get_llm()
         # Простая проверка индекса
-        from src.edms_assistant.core.rag_retriever import RAGRetriever
+        from srccc.edms_assistant.core.rag_retriever import RAGRetriever
         retriever = RAGRetriever()
         if retriever.vector_store:
             typer.echo("✅ Индекс загружен.")

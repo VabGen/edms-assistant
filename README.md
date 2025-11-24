@@ -1,35 +1,15 @@
 ## Installation
-```bash
-# Clone repository
-git clone <repository-url>
-cd edms-assistant
 
-# Install uv if not already installed
-pip install uv
-
-# Install dependencies
-uv venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-uv pip install -r requirements.txt
-
-# Create .env file
-cp .env.example .env
-# Edit .env with your configuration
-
-# Показать помощь
-edms-assistant --help
-
-# Запустить индексацию (передав токен)
-edms-assistant index --token your_edms_service_token
-
-# Указать путь к индексу
-edms-assistant index --token your_edms_service_token --path ./my_custom_index
-
-# Проверить состояние
-edms-assistant health
+uv pip install -r backend/requirements.txt
 
 uv sync --extra dev
 
-# В PowerShell
- 
-.venv312\Scripts\Activate.ps1
+New-Item -ItemType Directory -Path "data/documents", "data/vector_stores", "data/cache", "data/redis" -Force
+
+# Запускаем всё
+docker-compose up --build
+
+uv pip install faiss-cpu
+
+set PYTHONPATH=src
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload

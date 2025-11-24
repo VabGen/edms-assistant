@@ -234,7 +234,7 @@ async def main():
 
     OPENAPI_URL = "http://127.0.0.1:8098/public-resources/openapi"
     SPEC_FILE = "openapi_spec.json"
-    DTO_FILE = "src/edms_assistant/infrastructure/resources_openapi.py"
+    DTO_FILE = "srccc/edms_assistant/infrastructure/resources_openapi.py"
 
     download_success = await download_openapi_spec(OPENAPI_URL, SPEC_FILE)
     if not download_success:
