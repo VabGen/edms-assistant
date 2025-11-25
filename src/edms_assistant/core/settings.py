@@ -24,8 +24,8 @@ class Settings(BaseSettings):
 
     logging_level: str = Field(default="INFO")
     rag_batch_size: int = Field(default=10)
-    rag_chunk_size: int = Field(default=500)
-    rag_chunk_overlap: int = Field(default=100)
+    rag_chunk_size: int = Field(default=1200)
+    rag_chunk_overlap: int = Field(default=300)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_nested_delimiter="__")
 

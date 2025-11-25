@@ -6,10 +6,10 @@ function App() {
     return (
         <div className="min-h-screen bg-gray-50">
             <header className="p-6 bg-white shadow">
-                <h1 className="text-2xl font-bold text-gray-800">Портал СЭД</h1>
+                <h1 className="text-2xl font-bold text-gray-800">Портал</h1>
             </header>
             <main className="p-6">
-                <p className="text-gray-600">Здесь может быть любая страница.</p>
+                <p className="text-gray-600">страница.</p>
             </main>
             <AssistantWidget/>
         </div>

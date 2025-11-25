@@ -1,17 +1,10 @@
 # src/edms_assistant/rag/hybrid_search.py
 import logging
-from typing import List, Tuple, Dict, Any
-from pathlib import Path
-import pickle
-import os
-
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+from typing import List, Tuple
 from rank_bm25 import BM25Okapi
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-
-from edms_assistant.core.settings import settings
+# import pymorphy2
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +22,11 @@ class HybridSearch:
         logger.info(f"✅ BM25 инициализирован для {len(chunks)} чанков")
 
     def _tokenize(self, text: str) -> List[str]:
-        """Простая токенизация для русского языка"""
-        # Удаляем пунктуацию и разбиваем на слова
+        """Простая токенизация без лемматизации"""
         import re
+        # Удаляем пунктуацию и приводим к нижнему регистру
         text = re.sub(r"[^\w\s]", " ", text.lower())
+        # Разбиваем на слова
         return text.split()
 
     def search(

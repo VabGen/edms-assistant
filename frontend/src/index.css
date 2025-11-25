@@ -5,7 +5,167 @@
 @source "./src/index.css";
 
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900;
+    body {
+        @apply bg-gray-50 text-gray-900;
+    }
+}
+
+/* Анимация появления чата */
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-fadeInScale {
+    animation: fadeInScale 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Анимация волн при наведении */
+@keyframes wave-slow {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2);
   }
 }
+
+.animate-wave-slow {
+  animation: wave-slow 1.5s cubic-bezier(0.2, 0, 0.8, 1) forwards;
+}
+
+.animation-delay-300 {
+    animation-delay: 0.3s;
+}
+
+.animation-delay-600 {
+    animation-delay: 0.6s;
+}
+
+/* Синхронное сканирование глаз */
+@keyframes eyeScan {
+    0% {
+        transform: translate(-1px, -4px);
+    }
+    20% {
+        transform: translate(-1px, -6px);
+    }
+    /* Вверх */
+    40% {
+        transform: translate(-1px, -2px);
+    }
+    /* Вниз */
+    60% {
+        transform: translate(-3px, -4px);
+    }
+    /* Влево */
+    80% {
+        transform: translate(6px, -10px);
+    }
+    /* Вправо */
+    100% {
+        transform: translate(-6px, -10px);
+    }
+    /* Центр */
+}
+
+/* Моргание раз в 5 секунд */
+@keyframes blink {
+    0% {
+        height: 12px;
+    }
+    98% {
+        height: 12px;
+    }
+    99% {
+        height: 2px;
+    }
+    /* Почти закрыто */
+    99.5% {
+        height: 2px;
+    }
+    100% {
+        height: 12px;
+    }
+}
+
+.custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+/* Перенос текста в сообщениях */
+.break-words {
+    word-wrap: break-word;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+
+/* Анимация закрытия чата */
+@keyframes fadeOutScale {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.animate-fadeOutScale {
+  animation: fadeOutScale 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+
+
+/* Анимация левой волны — уходит влево */
+@keyframes waveLeft {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-200%) scale(2);
+  }
+}
+
+/* Анимация правой волны — уходит вправо */
+@keyframes waveRight {
+  0% {
+    opacity: 1;
+    transform: translateX(50%) scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(200%) scale(2);
+  }
+}
+
