@@ -116,14 +116,32 @@ async def get_chat_history_by_id(chat_id: str):
     history = await redis_client.get(chat_key) or []
     return {"messages": history}
 
-# from src.edms_assistant.api.routes import files
-#
-# @router.get("/{chat_id}/files")
-# async def get_chat_files_by_id(chat_id: str):
-#     """Получает список файлов чата"""
-#     chat_key = _build_session_key(chat_id)
-#     history = await redis_client.get(chat_key) or []
-#     return files.get_chat_files(history)
+@router.delete("/{chat_id}")
+async def delete_chat(
+    chat_id: str,
+    session_id: Annotated[Optional[str], Cookie(alias=SESSION_COOKIE_NAME)] = None,
+):
+    """
+    Удаляет чат по chat_id.
+    Удаляет:
+      - историю чата из Redis,
+      - запись о чате из списка пользователя.
+    """
+    if not session_id:
+        raise HTTPException(status_code=403, detail="Сессия не найдена")
+
+    # 1. Удаляем саму историю чата
+    chat_key = _build_session_key(chat_id)
+    await redis_client._client.delete(chat_key)
+
+    # 2. Удаляем chat_id из списка чатов пользователя
+    user_chats_key = _build_user_chats_key(session_id)
+    user_chats = await redis_client.get(user_chats_key) or []
+    if chat_id in user_chats:
+        user_chats.remove(chat_id)
+        await redis_client.set(user_chats_key, user_chats, expire=CHAT_TTL * 24)
+
+    return {"status": "deleted", "chat_id": chat_id}
 
 
 @router.post("/{chat_id}/ask")

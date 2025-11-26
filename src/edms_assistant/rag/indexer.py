@@ -5,7 +5,7 @@ import pickle
 from pathlib import Path
 from typing import Dict, List, Optional
 from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
+from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 
@@ -22,11 +22,16 @@ class IndexManager:
 
     def get_embeddings(self):
         if self._embeddings is None:
-            self._embeddings = OpenAIEmbeddings(
-                api_key="not-needed",
-                base_url=str(settings.vllm.embedding_base_url),
-                model=settings.vllm.embedding_model,
-            )
+            try:
+                self._embeddings = OpenAIEmbeddings(
+                    api_key="not-needed",
+                    base_url=str(settings.vllm.embedding_base_url),
+                    model=settings.vllm.embedding_model,
+                )
+            except:
+                # Fallback на CPU
+                from langchain_community.embeddings import HuggingFaceEmbeddings
+                self._embeddings = HuggingFaceEmbeddings(model_name="cointegrated/rubert-tiny2")
         return self._embeddings
 
     async def index_single_file(self, file_path: str) -> str:
@@ -73,15 +78,28 @@ class IndexManager:
         )
         chunks = splitter.split_documents(docs)
 
-        # Сохранение чанков
         with open(chunks_file, "wb") as f:
             pickle.dump(chunks, f)
 
-        # Индексация
-        vs = FAISS.from_documents(chunks, self.get_embeddings())
+        # === НОВАЯ BATCH-ИНДЕКСАЦИЯ ===
+        logger.info(f"Индексация {len(chunks)} чанков пакетами по {settings.rag_embedding_batch_size}...")
+        embeddings = self.get_embeddings()
+        batch_size = getattr(settings, 'rag_embedding_batch_size', 5)
+
+        # Создаём FAISS индекс по частям
+        vs = None
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            if vs is None:
+                vs = FAISS.from_documents(batch, embeddings)
+            else:
+                vs.add_documents(batch)
+            logger.debug(f"  → Обработано чанков: {min(i + batch_size, len(chunks))}/{len(chunks)}")
+
+        # Сохраняем индекс
         vs.save_local(store_dir)
         self.vector_stores[filename] = vs
-        logger.info(f"Проиндексирован: {filename}")
+        logger.info(f"✅ Проиндексирован: {filename}")
         return filename
 
     async def index_all_documents(self):

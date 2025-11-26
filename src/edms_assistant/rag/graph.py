@@ -42,7 +42,7 @@ async def reflect_node(state: AgentState) -> AgentState:
     current_file = state["selected_file"]
     other_files = [f for f in index_manager.vector_stores.keys() if f != current_file]
     if not other_files:
-        return {**state, "answer": "Я не нашёл информацию в доступных документах."}
+        return {**state, "answer": "Я не нашёл информацию в базе знаний."}
 
     for alt_file in other_files:
         vs = index_manager.vector_stores[alt_file]
@@ -52,7 +52,7 @@ async def reflect_node(state: AgentState) -> AgentState:
         if answer != "REFLECT: Не найдено в этом файле" and len(answer) > 20:
             return {**state, "answer": answer, "selected_file": alt_file}
 
-    return {**state, "answer": "Я не нашёл информацию в доступных документах."}
+    return {**state, "answer": "Я не нашёл информацию в базе знаний."}
 
 
 def should_reflect(state: AgentState) -> str:

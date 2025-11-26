@@ -1,8 +1,9 @@
-// srccc/App.jsx
+// src/App.jsx
 import React from 'react';
 import AssistantWidget from './components/AssistantWidget';
 
 function App() {
+    console.log('AssistantWidget rendered');
     return (
         <div className="min-h-screen bg-gray-50">
             <header className="p-6 bg-white shadow">

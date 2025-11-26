@@ -1,171 +1,148 @@
-/* srccc/index.css */
+/* src/index.css */
 @import "tailwindcss";
-
 @source "./src/**/*.{js,jsx,ts,tsx}";
-@source "./src/index.css";
 
-@layer base {
-    body {
-        @apply bg-gray-50 text-gray-900;
-    }
+@theme {
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-800: #1e40af;
+  --color-blue-900: #1e3a8a;
 }
 
-/* Анимация появления чата */
-@keyframes fadeInScale {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
+/* Опционально: базовые отступы */
+@theme {
+  --spacing-0: 0px;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+  /* ... */
 }
 
-.animate-fadeInScale {
-    animation: fadeInScale 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+/* Опционально: радиусы */
+@theme {
+  --radius-none: 0px;
+  --radius-sm: 0.125rem;
+  --radius: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
 }
 
-/* Анимация волн при наведении */
-@keyframes wave-slow {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2);
-  }
-}
 
-.animate-wave-slow {
-  animation: wave-slow 1.5s cubic-bezier(0.2, 0, 0.8, 1) forwards;
-}
 
-.animation-delay-300 {
-    animation-delay: 0.3s;
-}
-
-.animation-delay-600 {
-    animation-delay: 0.6s;
-}
-
-/* Синхронное сканирование глаз */
-@keyframes eyeScan {
-    0% {
-        transform: translate(-1px, -4px);
-    }
-    20% {
-        transform: translate(-1px, -6px);
-    }
-    /* Вверх */
-    40% {
-        transform: translate(-1px, -2px);
-    }
-    /* Вниз */
-    60% {
-        transform: translate(-3px, -4px);
-    }
-    /* Влево */
-    80% {
-        transform: translate(6px, -10px);
-    }
-    /* Вправо */
-    100% {
-        transform: translate(-6px, -10px);
-    }
-    /* Центр */
-}
-
-/* Моргание раз в 5 секунд */
-@keyframes blink {
-    0% {
-        height: 12px;
-    }
-    98% {
-        height: 12px;
-    }
-    99% {
-        height: 2px;
-    }
-    /* Почти закрыто */
-    99.5% {
-        height: 2px;
-    }
-    100% {
-        height: 12px;
-    }
-}
+/*:root {*/
+/*  --dx: 10px;*/
+/*  --dy: 10px;*/
+/*}*/
 
 .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: #d1d5db transparent;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  width: 5px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 3px;
+  background: #cbd5e1;
+  border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+  background: #94a3b8;
 }
 
-/* Перенос текста в сообщениях */
-.break-words {
-    word-wrap: break-word;
-    word-break: break-word;
-    hyphens: auto;
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
 }
-
-
-/* Анимация закрытия чата */
 @keyframes fadeOutScale {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.9);
-  }
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+@keyframes eyeScan {
+  0% { transform: translate(-1px, -4px); }
+  16% { transform: translate(-1px, -6px); }
+  32% { transform: translate(-1px, -2px); }
+  48% { transform: translate(-3px, -4px); }
+  64% { transform: translate(6px, -10px); }
+  80% { transform: translate(-6px, -10px); }
+  100% { transform: translate(-1px, -4px); }
+}
+@keyframes blink {
+  0%, 98%, 100% { height: 12px; }
+  99% { height: 2px; }
+}
+@keyframes innerGlow {
+  0% { opacity: 0.3; filter: blur(2px); }
+  100% { opacity: 0.6; filter: blur(4px); }
+}
+@keyframes pulseRing {
+  0% { transform: scale(1); opacity: 0.8; filter: blur(2px); }
+  50% { transform: scale(1.05); opacity: 0.6; filter: blur(4px); }
+  100% { transform: scale(1); opacity: 0.8; filter: blur(2px); }
+}
+@keyframes outerRing {
+  0% { transform: rotate(0deg); filter: blur(3px); opacity: 0.6; }
+  50% { filter: blur(4px); opacity: 0.4; }
+  100% { transform: rotate(360deg); filter: blur(3px); opacity: 0.6; }
+}
+@keyframes particleExplode {
+  0% { opacity: 1; transform: scale(1) translate(0, 0); }
+  100% { opacity: 0; transform: scale(0) translate(var(--dx), var(--dy)); }
 }
 
+/* Классы для анимаций (опционально — можно задавать инлайном, как у тебя) */
+.animate-fadeInScale {
+  animation: fadeInScale 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
 .animate-fadeOutScale {
-  animation: fadeOutScale 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: fadeOutScale 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.animate-inner-glow {
+  animation: innerGlow 3s ease-in-out infinite alternate;
+}
+.animate-pulse-ring {
+  animation: pulseRing 4s ease-in-out infinite;
+}
+.animate-outer-ring {
+  animation: outerRing 6s linear infinite;
 }
 
+/*@utility animate-eyeScan {*/
+/*  animation: eyeScan 8s cubic-bezier(0.3, 0, 0.7, 1) infinite;*/
+/*}*/
 
-
-/* Анимация левой волны — уходит влево */
-@keyframes waveLeft {
-  0% {
-    opacity: 1;
-    transform: translateX(-50%) scale(0.8);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-200%) scale(2);
-  }
-}
-
-/* Анимация правой волны — уходит вправо */
-@keyframes waveRight {
-  0% {
-    opacity: 1;
-    transform: translateX(50%) scale(0.8);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(200%) scale(2);
-  }
-}
-
+/*@utility animate-blink {*/
+/*  animation: blink 5s ease-in-out infinite;*/
+/*}*/
