@@ -6,6 +6,7 @@ from edms_assistant.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 class RedisClient:
     def __init__(self):
         self._client: Optional[Redis] = None
@@ -42,8 +43,11 @@ class RedisClient:
         if not self.enabled or not self._client:
             return
         try:
-            await self._client.setex(key, expire, json.dumps(value, ensure_ascii=False))
+            serialized = json.dumps(value, ensure_ascii=False, default=str)
+            await self._client.setex(key, expire, serialized)
         except Exception as e:
             logger.warning(f"⚠️ Ошибка записи в Redis ({key}): {e}")
+            logger.debug(f"Значение для записи: {value}")
+
 
 redis_client = RedisClient()

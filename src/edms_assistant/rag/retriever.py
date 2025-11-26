@@ -1,6 +1,6 @@
 # src/edms_assistant/rag/retriever.py
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 from pathlib import Path
 import pickle
 
@@ -11,99 +11,93 @@ from src.edms_assistant.rag.hybrid_search import HybridSearch
 logger = logging.getLogger(__name__)
 
 
-async def expand_query(query: str) -> str:
+async def _expand_and_route_query(question: str, chat_history: List[Dict]) -> str:
+    """Объединяет расширение запроса и контекст."""
+    history = " ".join(
+        msg["content"] for msg in chat_history[-2:] if msg["role"] == "user"
+    ) if chat_history else ""
+
+    input_text = f"Контекст: {history}\nВопрос: {question}" if history else question
+
     llm = ChatOpenAI(
         api_key="not-needed",
         base_url=str(settings.vllm.generative_base_url),
         model=settings.vllm.generative_model,
         temperature=0.0
     )
-    prompt = f"""
-Ты — эксперт по корпоративной документации: инструкции, регламенты, руководства, формы, политики, процессы.
-Перепиши вопрос пользователя, добавив синонимы, официальные термины и возможные формулировки, 
-которые могут встречаться в деловых документах.
 
-Не добавляй пояснений. Верни только расширенный текст запроса.
+    prompt = f"""Расширь запрос для поиска в документах, добавив синонимы и официальные термины.
+Вопрос: {input_text}
+Расширенный запрос:"""
 
-Вопрос: "{query}"
-
-Расширенный запрос:
-"""
-    response = await llm.ainvoke([("user", prompt)])
-    return response.content.strip()
+    resp = await llm.ainvoke([("user", prompt)])
+    return resp.content.strip()
 
 
 async def retrieve_and_generate(
         question: str,
         filename: str,
-        chat_history: List[Dict],
+        chat_history: List[Dict[str, Any]],
         vector_store
 ) -> str:
-    # === 1. Расширяем запрос с помощью LLM ===
-    expanded_query = await expand_query(question)
-    logger.debug(f"Исходный запрос: {question}")
-    logger.debug(f"Расширенный запрос: {expanded_query}")
+    logger.debug(f"💬 История чата (из Redis): {chat_history}")
+    # Формируем enriched query
+    enriched_query = await _expand_and_route_query(question, chat_history)
+    logger.debug(f"🔍 Расширенный запрос: {enriched_query}")
 
-    # === 2. Загружаем чанки из файла ===
+    # Загрузка чанков
     store_dir = Path(settings.paths.vector_stores_dir) / Path(filename).stem
     chunks_path = store_dir / "chunks.pkl"
 
     if not chunks_path.exists():
-        logger.error(f"❌ Файл чанков не найден: {chunks_path}")
+        logger.error(f"❌ Чанки не найдены: {chunks_path}")
         return "REFLECT: Не найдено в этом файле"
 
-    try:
-        with open(chunks_path, "rb") as f:
-            chunks = pickle.load(f)
-    except Exception as e:
-        logger.error(f"❌ Ошибка загрузки чанков для {filename}: {e}")
-        return "REFLECT: Не найдено в этом файле"
+    with open(chunks_path, "rb") as f:
+        chunks = pickle.load(f)
 
-    # === 3. Гибридный поиск по расширенному запросу ===
+    # Гибридный поиск
     hybrid = HybridSearch(vector_store, chunks)
-    hybrid_results = hybrid.search(
-        query=expanded_query,
-        k=5,
-        semantic_weight=0.6,
-        keyword_weight=0.4
-    )
+    results = hybrid.search(query=enriched_query, k=5)
+    relevant_docs = [doc for doc, _ in results[:3]] if results else []
 
-    relevant_docs = [doc for doc, score in hybrid_results[:3]]
     if not relevant_docs:
         return "REFLECT: Не найдено в этом файле"
 
-    # === 4. Формируем контекст и генерируем ответ ===
-    context = "\n\n".join([
-        f"Источник: {doc.metadata.get('source', 'Unknown')}\nСодержимое:\n{doc.page_content}"
+    context = "\n\n".join(
+        f"[{doc.metadata.get('source', 'Unknown')}]\n{doc.page_content}"
         for doc in relevant_docs
-    ])
+    )
+    logger.debug(f"📚 Контекст:\n{context}")
 
-    system_prompt = f"""Ты — эксперт по документам. Отвечай ТОЛЬКО на основе контекста.
-    Верни ПОЛНЫЙ и ТОЧНЫЙ ответ, включая ВСЕ пункты и подпункты.
-    Если информации нет — скажи: «Я не нашёл информацию в документах».
-    Не сокращай, не обобщай, не выдумывай.
+    # Формируем промпт с историей
+    history_str = "\n".join(
+        f"{m['role']}: {m['content']}" for m in chat_history
+    ) if chat_history else "Нет истории."
 
-    Контекст:
-    {context}
-    """
+    system = f"""Ты — эксперт по документам. Отвечай ТОЛЬКО по контексту.
+Верни ПОЛНЫЙ ответ со ВСЕМИ деталями. Если информации нет — скажи: «Я не нашёл информацию в документах».
 
-    user_prompt = f"Вопрос: {question}"
+Контекст:
+{context}"""
+
+    user = f"""История:
+{history_str}
+
+Вопрос: {question}"""
 
     llm = ChatOpenAI(
         api_key="not-needed",
         base_url=str(settings.vllm.generative_base_url),
         model=settings.vllm.generative_model,
         temperature=0.0,
-        max_tokens=1024,
+        max_tokens=1024
     )
 
-    messages = [("system", system_prompt), ("user", user_prompt)]
-    response = await llm.ainvoke(messages)
-    answer = response.content.strip()
+    resp = await llm.ainvoke([("system", system), ("user", user)])
+    answer = resp.content.strip()
 
-    if any(phrase in answer.lower() for phrase in [
-        "не нашёл", "не могу найти", "нет информации", "не указано", "не содержится"
-    ]):
+    if any(p in answer.lower() for p in ["не нашёл", "не могу найти", "нет информации"]):
         return "REFLECT: Не найдено в этом файле"
 
     return answer

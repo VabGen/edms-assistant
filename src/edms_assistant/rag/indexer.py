@@ -1,109 +1,103 @@
-import os
+# src/edms_assistant/rag/indexer.py
 import logging
+import os
 import pickle
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
+
 from edms_assistant.core.settings import settings
 from src.edms_assistant.rag.loader import get_loader
 
 logger = logging.getLogger(__name__)
 
-VECTOR_STORES: Dict[str, FAISS] = {}
-CHUNKS_BY_FILE: Dict[str, List[Document]] = {}
 
+class IndexManager:
+    def __init__(self):
+        self.vector_stores: Dict[str, FAISS] = {}
+        self._embeddings = None
 
-def init_embeddings():
-    return OpenAIEmbeddings(
-        api_key="not-needed",
-        base_url=str(settings.vllm.embedding_base_url),
-        model=settings.vllm.embedding_model,
-    )
-
-
-async def index_single_file(file_path: str) -> str:
-    filename = os.path.basename(file_path)
-    embeddings = init_embeddings()
-
-    store_dir = os.path.join(settings.paths.vector_stores_dir, Path(filename).stem)
-    os.makedirs(store_dir, exist_ok=True)
-
-    index_file = os.path.join(store_dir, "index.faiss")
-    chunks_path = os.path.join(store_dir, "chunks.pkl")
-
-    # Попытка загрузить существующий индекс И чанки
-    if os.path.exists(index_file) and os.path.exists(chunks_path):
-        try:
-            vector_store = FAISS.load_local(
-                store_dir, embeddings, allow_dangerous_deserialization=True
+    def get_embeddings(self):
+        if self._embeddings is None:
+            self._embeddings = OpenAIEmbeddings(
+                api_key="not-needed",
+                base_url=str(settings.vllm.embedding_base_url),
+                model=settings.vllm.embedding_model,
             )
-            with open(chunks_path, "rb") as f:
-                chunks = pickle.load(f)
-            VECTOR_STORES[filename] = vector_store
-            CHUNKS_BY_FILE[filename] = chunks
-            logger.info(f"✅ Загружен индекс и чанки: {filename}")
-            return filename
-        except Exception as e:
-            logger.warning(f"⚠️ Пересоздаём индекс для {filename}: {e}")
+        return self._embeddings
 
-    # === Загрузка и индексация (если не загрузилось) ===
-    loader = get_loader(file_path)
-    docs = loader.load()
+    async def index_single_file(self, file_path: str) -> str:
+        filename = os.path.basename(file_path)
+        store_dir = Path(settings.paths.vector_stores_dir) / Path(filename).stem
+        store_dir.mkdir(parents=True, exist_ok=True)
 
-    cleaned_docs = []
-    for doc in docs:
-        if doc.metadata.get("type") == "table":
-            table_text = doc.page_content.replace("\n", " | ").replace("  ", " ")
-            cleaned_docs.append(
-                type(doc)(
-                    page_content=f"Таблица из {filename}:\n{table_text}",
-                    metadata={**doc.metadata, "source": filename, "type": "table"}
-                )
-            )
-        else:
-            cleaned_docs.append(doc)
-    docs = cleaned_docs
+        index_file = store_dir / "index.faiss"
+        chunks_file = store_dir / "chunks.pkl"
 
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=settings.rag_chunk_size,
-        chunk_overlap=settings.rag_chunk_overlap
-    )
-    split_docs = text_splitter.split_documents(docs)
-
-    # Сохраняем чанки
-    with open(chunks_path, "wb") as f:
-        pickle.dump(split_docs, f)
-
-    # Индексация FAISS
-    vector_store = None
-    for i in range(0, len(split_docs), settings.rag_batch_size):
-        batch = split_docs[i:i + settings.rag_batch_size]
-        if vector_store is None:
-            vector_store = FAISS.from_documents(batch, embeddings)
-        else:
-            vector_store.add_documents(batch)
-
-    if vector_store is None:
-        raise RuntimeError(f"Не удалось создать индекс для {filename}")
-
-    vector_store.save_local(store_dir)
-    VECTOR_STORES[filename] = vector_store
-    CHUNKS_BY_FILE[filename] = split_docs
-    logger.info(f"✅ Проиндексирован и сохранены чанки: {filename}")
-    return filename
-
-
-async def index_all_documents():
-    os.makedirs(settings.paths.documents_dir, exist_ok=True)
-    os.makedirs(settings.paths.vector_stores_dir, exist_ok=True)
-
-    for filename in os.listdir(settings.paths.documents_dir):
-        file_path = os.path.join(settings.paths.documents_dir, filename)
-        if os.path.isfile(file_path):
+        # Попытка загрузки
+        if index_file.exists() and chunks_file.exists():
             try:
-                await index_single_file(file_path)
+                vs = FAISS.load_local(store_dir, self.get_embeddings(), allow_dangerous_deserialization=True)
+                with open(chunks_file, "rb") as f:
+                    chunks = pickle.load(f)
+                self.vector_stores[filename] = vs
+                logger.info(f"✅ Загружен индекс: {filename}")
+                return filename
             except Exception as e:
-                logger.error(f"❌ Ошибка индексации {filename}: {e}")
+                logger.warning(f"⚠️ Пересоздаём индекс для {filename}: {e}")
+
+        # Загрузка и обработка
+        loader = get_loader(file_path)
+        docs = loader.load()
+
+        cleaned_docs = []
+        for doc in docs:
+            if doc.metadata.get("type") == "table":
+                text = doc.page_content.replace("\n", " | ").replace("  ", " ")
+                cleaned_docs.append(
+                    type(doc)(
+                        page_content=f"Таблица из {filename}:\n{text}",
+                        metadata={**doc.metadata, "source": filename, "type": "table"}
+                    )
+                )
+            else:
+                cleaned_docs.append(doc)
+        docs = cleaned_docs
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=settings.rag_chunk_size,
+            chunk_overlap=settings.rag_chunk_overlap
+        )
+        chunks = splitter.split_documents(docs)
+
+        # Сохранение чанков
+        with open(chunks_file, "wb") as f:
+            pickle.dump(chunks, f)
+
+        # Индексация
+        vs = FAISS.from_documents(chunks, self.get_embeddings())
+        vs.save_local(store_dir)
+        self.vector_stores[filename] = vs
+        logger.info(f"Проиндексирован: {filename}")
+        return filename
+
+    async def index_all_documents(self):
+        docs_dir = Path(settings.paths.documents_dir)
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        vector_dir = Path(settings.paths.vector_stores_dir)
+        vector_dir.mkdir(parents=True, exist_ok=True)
+
+        for item in docs_dir.iterdir():
+            if item.is_file():
+                try:
+                    await self.index_single_file(str(item))
+                except Exception as e:
+                    logger.error(f"Ошибка индексации {item.name}: {e}")
+
+
+# Единый экземпляр
+index_manager = IndexManager()
+index_all_documents = index_manager.index_all_documents

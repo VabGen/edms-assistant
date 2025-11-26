@@ -1,8 +1,5 @@
-// src/components/AssistantWidget.jsx
 import React, {useState, useRef, useEffect} from 'react';
 import axios from 'axios';
-
-// import '../index.css';
 
 const AssistantWidget = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -10,13 +7,71 @@ const AssistantWidget = () => {
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [chats, setChats] = useState([]);
+    const [activeChatId, setActiveChatId] = useState(null);
+    const [isChatPanelOpen, setIsChatPanelOpen] = useState(false);
     const fileInputRef = useRef(null);
     const messagesEndRef = useRef(null);
     const chatContainerRef = useRef(null);
 
-    // Приветствие при первом открытии
+    // Загрузка списка чатов
+    const loadChats = async () => {
+        try {
+            const res = await axios.get('http://localhost:8000/api/chat/list', {
+                withCredentials: true
+            });
+            setChats(res.data.chats);
+            if (res.data.chats.length > 0 && !activeChatId) {
+                setActiveChatId(res.data.chats[0].chat_id);
+            }
+        } catch (err) {
+            console.error('Не удалось загрузить чаты:', err);
+        }
+    };
+
+    // Загрузка истории чата
+    const loadChatHistory = async (chatId) => {
+        try {
+            const res = await axios.get(`http://localhost:8000/api/chat/${chatId}/history`, {
+                withCredentials: true
+            });
+            setMessages(res.data.messages);
+        } catch (err) {
+            console.error('Не удалось загрузить историю:', err);
+            setMessages([]);
+        }
+    };
+
+    // Создание нового чата
+    const createNewChat = async () => {
+        try {
+            const res = await axios.post('http://localhost:8000/api/chat/new', {}, {
+                withCredentials: true
+            });
+            setActiveChatId(res.data.chat_id);
+            setMessages([]);
+            loadChats();
+        } catch (err) {
+            console.error('Не удалось создать чат:', err);
+        }
+    };
+
+    // Эффекты
     useEffect(() => {
-        if (isOpen && messages.length === 0) {
+        if (isOpen) {
+            loadChats();
+        }
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (activeChatId) {
+            loadChatHistory(activeChatId);
+        }
+    }, [activeChatId]);
+
+    // Приветствие для нового чата
+    useEffect(() => {
+        if (isOpen && messages.length === 0 && activeChatId) {
             setMessages([
                 {
                     role: 'assistant',
@@ -25,16 +80,16 @@ const AssistantWidget = () => {
                 },
             ]);
         }
-    }, [isOpen, messages.length]);
+    }, [isOpen, messages.length, activeChatId]);
 
-    // Плавная прокрутка вниз
+    // Прокрутка
     useEffect(() => {
         if (messagesEndRef.current) {
             messagesEndRef.current.scrollIntoView({behavior: 'smooth'});
         }
     }, [messages]);
 
-    // Закрытие чата при клике вне его
+    // Закрытие по клику вне
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (
@@ -66,13 +121,13 @@ const AssistantWidget = () => {
         setTimeout(() => {
             setIsOpen(false);
             setIsClosing(false);
-        }, 400); // Должно соответствовать длительности анимации
+        }, 400);
     };
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
         const text = inputValue.trim();
-        if (!text) return;
+        if (!text || !activeChatId) return;
 
         const userMsg = {
             role: 'user',
@@ -84,7 +139,11 @@ const AssistantWidget = () => {
         setIsLoading(true);
 
         try {
-            const res = await axios.post('http://localhost:8000/api/chat/ask', {question: text});
+            const res = await axios.post(
+                `http://localhost:8000/api/chat/${activeChatId}/ask`,
+                {question: text},
+                {withCredentials: true}
+            );
             const botMsg = {
                 role: 'assistant',
                 content: res.data.answer,
@@ -92,6 +151,7 @@ const AssistantWidget = () => {
             };
             setMessages((prev) => [...prev, botMsg]);
         } catch (err) {
+            console.error('Ошибка при отправке сообщения:', err);
             setMessages((prev) => [
                 ...prev,
                 {
@@ -113,9 +173,14 @@ const AssistantWidget = () => {
         formData.append('file', file);
 
         try {
-            await axios.post('http://localhost:8000/api/files/upload', formData, {
-                headers: {'Content-Type': 'multipart/form-data'},
-            });
+            await axios.post(
+                'http://localhost:8000/api/files/upload',
+                formData,
+                {
+                    headers: {'Content-Type': 'multipart/form-data'},
+                    withCredentials: true,
+                }
+            );
             setMessages((prev) => [
                 ...prev,
                 {
@@ -125,6 +190,7 @@ const AssistantWidget = () => {
                 },
             ]);
         } catch (err) {
+            console.error('Ошибка загрузки файла:', err);
             setMessages((prev) => [
                 ...prev,
                 {
@@ -141,14 +207,13 @@ const AssistantWidget = () => {
             {/* FAB-кнопка */}
             {!isOpen && (
                 <div className="relative flex items-center justify-center cursor-pointer">
-                    {/* Левая волна */}
                     <div
                         ref={(el) => {
                             if (el) {
                                 el.onmouseenter = () => {
                                     el.style.opacity = '1';
                                     el.style.transform = 'translateX(-50%) scale(0.8)';
-                                    el.style.animation = 'none'; // Сбросим предыдущую анимацию
+                                    el.style.animation = 'none';
                                     setTimeout(() => {
                                         el.style.animation = 'waveLeft 1.2s cubic-bezier(0.2, 0, 0.8, 1) forwards';
                                     }, 10);
@@ -168,8 +233,6 @@ const AssistantWidget = () => {
                             right: 'auto',
                         }}
                     />
-
-                    {/* Правая волна */}
                     <div
                         ref={(el) => {
                             if (el) {
@@ -196,18 +259,15 @@ const AssistantWidget = () => {
                             left: 'auto',
                         }}
                     />
-
                     <button
                         onClick={toggleWidget}
                         className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 relative z-10"
                         style={{
-                            transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
                             background: 'linear-gradient(135deg, #3b82f6, #6d28d9)',
                             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2), 0 0 10px rgba(106, 81, 255, 0.5)',
                         }}
                         aria-label="Открыть помощника"
                     >
-                        {/* Глаза */}
                         <div className="flex space-x-1 relative">
                             <div
                                 className="w-2 bg-white rounded-sm"
@@ -228,9 +288,7 @@ const AssistantWidget = () => {
                         </div>
                         <div
                             className="absolute top-1 left-1 w-4 h-2 bg-white rounded-full opacity-30"
-                            style={{
-                                transform: 'rotate(45deg)',
-                            }}
+                            style={{transform: 'rotate(45deg)'}}
                         />
                     </button>
                 </div>
@@ -259,22 +317,47 @@ const AssistantWidget = () => {
                         </button>
                     </div>
 
-                    <div
-                        className="p-4 space-y-3 max-h-[calc(80vh-120px)] overflow-y-auto custom-scrollbar"
-                        style={{scrollBehavior: 'smooth'}}
-                    >
-                        {messages.map((msg, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
+                    {/* Панель управления чатами */}
+                    <div className="px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                        <button
+                            onClick={() => setIsChatPanelOpen(!isChatPanelOpen)}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                        >
+                            {isChatPanelOpen ? 'Скрыть чаты' : 'Мои чаты'}
+                        </button>
+                        <button
+                            onClick={createNewChat}
+                            className="text-sm bg-blue-100 text-blue-600 rounded-full px-2 py-1 hover:bg-blue-200"
+                        >
+                            + Новый
+                        </button>
+                    </div>
+
+                    {isChatPanelOpen && (
+                        <div className="p-2 max-h-32 overflow-y-auto border-b border-gray-100">
+                            {chats.map((chat) => (
                                 <div
-                                    className={`max-w-xs px-4 py-2 text-sm rounded-2xl break-words ${
-                                        msg.role === 'user'
-                                            ? 'bg-blue-600 text-white rounded-br-none'
-                                            : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                                    key={chat.chat_id}
+                                    onClick={() => {
+                                        setActiveChatId(chat.chat_id);
+                                        setIsChatPanelOpen(false);
+                                    }}
+                                    className={`p-2 text-sm cursor-pointer rounded ${
+                                        activeChatId === chat.chat_id ? 'bg-blue-100' : 'hover:bg-gray-100'
                                     }`}
                                 >
+                                    {chat.preview}
+                                </div>
+                            ))}
+                            {chats.length === 0 && <div className="text-gray-400 text-sm p-2">Нет чатов</div>}
+                        </div>
+                    )}
+
+                    <div className="p-4 space-y-3 max-h-[calc(80vh-180px)] overflow-y-auto custom-scrollbar">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div
+                                    className={`max-w-xs px-4 py-2 text-sm rounded-2xl break-words ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-100 text-gray-800 rounded-bl-none'}`}>
                                     {msg.content}
                                 </div>
                             </div>
@@ -284,11 +367,8 @@ const AssistantWidget = () => {
                                 <div className="bg-gray-100 px-4 py-2 rounded-2xl rounded-bl-none">
                                     <div className="flex space-x-1">
                                         {[0, 1, 2].map((i) => (
-                                            <div
-                                                key={i}
-                                                className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
-                                                style={{animationDelay: `${i * 0.1}s`}}
-                                            />
+                                            <div key={i} className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+                                                 style={{animationDelay: `${i * 0.1}s`}}/>
                                         ))}
                                     </div>
                                 </div>
@@ -304,14 +384,8 @@ const AssistantWidget = () => {
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             placeholder="Сообщение..."
-                            className="flex-1 min-w-0 bg-gray-100 text-gray-800 text-sm rounded-full px-4 py-2 outline-none border border-gray-200
-                                transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]
-                                focus:translate-y-[-2px] focus:scale-[1.02] focus:shadow-md focus:border-blue-400"
-                            style={{
-                                overflow: 'hidden',
-                                whiteSpace: 'nowrap',
-                                textOverflow: 'ellipsis',
-                            }}
+                            className="flex-1 min-w-0 bg-gray-100 text-gray-800 text-sm rounded-full px-4 py-2 outline-none border border-gray-200 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] focus:translate-y-[-2px] focus:scale-[1.02] focus:shadow-md focus:border-blue-400"
+                            style={{overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis'}}
                             disabled={isLoading}
                         />
                         <button
