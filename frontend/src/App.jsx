@@ -1,17 +1,17 @@
 // src/App.jsx
 import React from 'react';
 import AssistantWidget from './components/AssistantWidget';
+import './index.css';
 
 function App() {
-    console.log('AssistantWidget rendered');
     return (
-        <div className="min-h-screen bg-gray-50">
-            <header className="p-6 bg-white shadow">
-                <h1 className="text-2xl font-bold text-gray-800"></h1>
-            </header>
-            <main className="p-6">
-                <p className="text-gray-600"></p>
-            </main>
+        <div className="min-h-screen" style={
+            {
+                backgroundImage: "url('/b.jpg')",
+                backgroundSize: "cover",
+                backgroundRepeat: "no-repeat"
+            }
+        }>
             <AssistantWidget/>
         </div>
     );

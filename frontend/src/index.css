@@ -1,33 +1,37 @@
-/* src/index.css */
 @import "tailwindcss";
+
 @source "./src/**/*.{js,jsx,ts,tsx}";
 
-@theme {
-  --color-gray-50: #f9fafb;
-  --color-gray-100: #f3f4f6;
-  --color-gray-200: #e5e7eb;
-  --color-gray-300: #d1d5db;
-  --color-gray-400: #9ca3af;
-  --color-gray-500: #6b7280;
-  --color-gray-600: #4b5563;
-  --color-gray-700: #374151;
-  --color-gray-800: #1f2937;
-  --color-gray-900: #111827;
+/* === Цвета — светлый неон с прозрачностью === */
+:root {
+  --color-white: #ffffff;
+  --color-light-100: #f8f9fa;
+  --color-light-200: #e9ecef;
+  --color-light-300: #dee2e6;
+  --color-light-400: #ced4da;
+  --color-light-500: #adb5bd;
+  --color-light-600: #6c757d;
+  --color-light-700: #495057;
+  --color-light-800: #343a40;
+  --color-light-900: #212529;
 
-  --color-blue-50: #eff6ff;
-  --color-blue-100: #dbeafe;
-  --color-blue-200: #bfdbfe;
-  --color-blue-300: #93c5fd;
-  --color-blue-400: #60a5fa;
-  --color-blue-500: #3b82f6;
-  --color-blue-600: #2563eb;
-  --color-blue-700: #1d4ed8;
-  --color-blue-800: #1e40af;
-  --color-blue-900: #1e3a8a;
+  /* Белое неоновое стекло */
+  --neon-glass: rgba(255, 255, 255, 0.75);
+  --neon-glass-hover: rgba(255, 255, 255, 0.85);
+  --neon-border: rgba(255, 255, 255, 0.2);
+  --neon-shadow: rgba(0, 0, 0, 0.05);
+  --neon-accent: #6b7280;
+  --neon-accent-hover: #4b5563;
+  --neon-accent-active: #374151;
+  --neon-red: #ef4444;
+  --neon-red-hover: #dc2626;
+
+  --dx: 10px;
+  --dy: 10px;
 }
 
-/* Опционально: базовые отступы */
-@theme {
+/* === Отступы и радиусы === */
+:root {
   --spacing-0: 0px;
   --spacing-1: 0.25rem;
   --spacing-2: 0.5rem;
@@ -38,11 +42,9 @@
   --spacing-8: 2rem;
   --spacing-10: 2.5rem;
   --spacing-12: 3rem;
-  /* ... */
 }
 
-/* Опционально: радиусы */
-@theme {
+:root {
   --radius-none: 0px;
   --radius-sm: 0.125rem;
   --radius: 0.25rem;
@@ -53,96 +55,564 @@
   --radius-3xl: 1.5rem;
 }
 
-
-
-/*:root {*/
-/*  --dx: 10px;*/
-/*  --dy: 10px;*/
-/*}*/
-
+/* === Скроллбар — всегда видимый, но не при наведении === */
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
+  height: 6px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
   border-radius: 10px;
 }
 
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: rgba(0, 0, 0, 0.2);
 }
 
+/* === Анимации === */
 @keyframes fadeInScale {
-  from { opacity: 0; transform: scale(0.92); }
-  to { opacity: 1; transform: scale(1); }
-}
-@keyframes fadeOutScale {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.92); }
-}
-@keyframes eyeScan {
-  0% { transform: translate(-1px, -4px); }
-  16% { transform: translate(-1px, -6px); }
-  32% { transform: translate(-1px, -2px); }
-  48% { transform: translate(-3px, -4px); }
-  64% { transform: translate(6px, -10px); }
-  80% { transform: translate(-6px, -10px); }
-  100% { transform: translate(-1px, -4px); }
-}
-@keyframes blink {
-  0%, 98%, 100% { height: 12px; }
-  99% { height: 2px; }
-}
-@keyframes innerGlow {
-  0% { opacity: 0.3; filter: blur(2px); }
-  100% { opacity: 0.6; filter: blur(4px); }
-}
-@keyframes pulseRing {
-  0% { transform: scale(1); opacity: 0.8; filter: blur(2px); }
-  50% { transform: scale(1.05); opacity: 0.6; filter: blur(4px); }
-  100% { transform: scale(1); opacity: 0.8; filter: blur(2px); }
-}
-@keyframes outerRing {
-  0% { transform: rotate(0deg); filter: blur(3px); opacity: 0.6; }
-  50% { filter: blur(4px); opacity: 0.4; }
-  100% { transform: rotate(360deg); filter: blur(3px); opacity: 0.6; }
-}
-@keyframes particleExplode {
-  0% { opacity: 1; transform: scale(1) translate(0, 0); }
-  100% { opacity: 0; transform: scale(0) translate(var(--dx), var(--dy)); }
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
-/* Классы для анимаций (опционально — можно задавать инлайном, как у тебя) */
+@keyframes fadeOutScale {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes fabFadeOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8) rotate(10deg) translateZ(-100px);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-2px, 0); }
+  50% { transform: translate(2px, 0); }
+  75% { transform: translate(-2px, 0); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.3);
+  }
+}
+
+@keyframes blink {
+  0%, 98%, 100% {
+    height: 12px;
+  }
+  99% {
+    height: 2px;
+  }
+}
+
+@keyframes particleExplode {
+  0% {
+    opacity: 1;
+    transform: scale(1) translate(0, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0) translate(var(--dx), var(--dy));
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes eyeScan {
+  0% {
+    transform: translate(-1px, -4px);
+  }
+  16% {
+    transform: translate(-1px, -6px);
+  }
+  32% {
+    transform: translate(-1px, -2px);
+  }
+  48% {
+    transform: translate(-3px, -4px);
+  }
+  64% {
+    transform: translate(6px, -10px);
+  }
+  80% {
+    transform: translate(-6px, -10px);
+  }
+  100% {
+    transform: translate(-1px, -4px);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  }
+}
+
+/* === Классы для анимаций === */
 .animate-fadeInScale {
   animation: fadeInScale 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
 .animate-fadeOutScale {
   animation: fadeOutScale 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
-.animate-inner-glow {
-  animation: innerGlow 3s ease-in-out infinite alternate;
+
+.animate-fab-fade-out {
+  animation: fabFadeOut 0.6s ease-out forwards;
 }
+
+.animate-pulse {
+  animation: pulse 0.5s ease-in-out infinite;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+.animate-glow {
+  animation: glow 1s ease-in-out infinite;
+}
+
+.animate-blink {
+  animation: blink 1s steps(2, end) infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 4s linear infinite;
+}
+
 .animate-pulse-ring {
-  animation: pulseRing 4s ease-in-out infinite;
-}
-.animate-outer-ring {
-  animation: outerRing 6s linear infinite;
+  animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/*@utility animate-eyeScan {*/
-/*  animation: eyeScan 8s cubic-bezier(0.3, 0, 0.7, 1) infinite;*/
-/*}*/
+/* === Белое неоновое стекло (Frosted Glass) — островки === */
+.neon-glass {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--radius-xl, 0.75rem);
+  border: 1px solid var(--neon-border);
+  background: var(--neon-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 20px var(--neon-shadow),
+    inset 0 0 10px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  padding: 0.75rem;
+}
 
-/*@utility animate-blink {*/
-/*  animation: blink 5s ease-in-out infinite;*/
-/*}*/
+.neon-glass::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(240, 240, 240, 0.9) 100%);
+  z-index: -1;
+}
+
+.neon-glass:hover {
+  background: var(--neon-glass-hover);
+  box-shadow:
+    0 6px 24px var(--neon-shadow),
+    inset 0 0 15px rgba(255, 255, 255, 0.15);
+}
+
+.neon-glass * {
+  color: #111827;
+}
+
+/* Для FAB (кнопки) — увеличенный размер + анимация */
+.neon-glass-fab {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--neon-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    inset 0 0 10px rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.neon-glass-fab:hover {
+  background: var(--neon-glass-hover);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.12),
+    inset 0 0 15px rgba(255, 255, 255, 0.2);
+  transform: scale(1.07);
+}
+
+.neon-glass-fab:active {
+  transform: scale(0.95);
+}
+
+/* Общие стили для иконок внутри neon-glass */
+.neon-glass .icon,
+.neon-glass .icon-lg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+
+.neon-glass .icon-lg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* Инпут — с hover и focus */
+.neon-glass input,
+.neon-glass textarea {
+  color: #111827;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--neon-border);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: 0.6rem;
+  padding: 0.6rem 1.2rem;
+  transition: all 0.2s ease;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.neon-glass input:focus,
+.neon-glass textarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.neon-glass input:hover,
+.neon-glass textarea:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.neon-glass input:not(:placeholder-shown) {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: glow 0.5s ease-in-out;
+}
+
+/* Кнопки — с hover и active */
+.neon-glass button {
+  color: #111827;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--neon-border);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 0.5rem;
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.neon-glass button:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.05);
+}
+
+.neon-glass button:active {
+  background: rgba(255, 255, 255, 0.95);
+  transform: scale(0.98);
+}
+
+.neon-glass button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* === Корзина — при наведении краснеет и анимируется === */
+.delete-btn {
+  opacity: 0.7;
+  padding: 0.35rem;
+  border-radius: 0.375rem;
+  transition: all 0.25s ease;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.delete-btn:hover {
+  opacity: 1;
+  color: var(--neon-red);
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.15) rotate(5deg);
+  animation: shake 0.3s ease-in-out;
+}
+
+/* Для сообщений — отдельные пузыри */
+.message-bubble {
+  max-width: 80%;
+  padding: 0.75rem 1rem;
+  border-radius: 1.5rem;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid var(--neon-border);
+  box-shadow: 0 2px 8px var(--neon-shadow);
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  word-wrap: break-word;
+}
+
+.message-bubble.user {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+  border-bottom-right-radius: 0.25rem;
+}
+
+.message-bubble.assistant {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.1);
+  border-bottom-left-radius: 0.25rem;
+}
+
+/* Заголовок окна */
+.neon-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--neon-border);
+  background: var(--neon-glass);
+  border-top-left-radius: var(--radius-xl, 0.75rem);
+  border-top-right-radius: var(--radius-xl, 0.75rem);
+  box-shadow: 0 2px 10px var(--neon-shadow);
+}
+
+.neon-header h3 {
+  font-weight: 600;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.neon-header button {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  font-size: 1.25rem;
+}
+
+.neon-header button:hover {
+  color: #111827;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.neon-header button:active {
+  transform: scale(0.95);
+}
+
+/* Панель чатов — отдельный островок */
+.chat-panel {
+  width: 200px;
+  padding: 0.75rem;
+  border-right: 1px solid var(--neon-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+
+.chat-panel .chat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--neon-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+}
+
+.chat-panel .chat-item:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateX(2px);
+}
+
+.chat-panel .chat-item.active {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+/* Основная область чата — отдельный островок */
+.chat-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.chat-area .messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--neon-border);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px var(--neon-shadow);
+}
+
+.chat-area .input-container {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--neon-border);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 2px 8px var(--neon-shadow);
+  align-items: center;
+}
+
+.send-icon {
+  color: #6b7280;
+  transition: color 0.2s ease;
+}
+
+.send-icon.active {
+  color: #111827;
+  animation: pulse 0.5s ease-in-out;
+}
+
+/* Новый чат */
+.new-chat-btn {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--neon-border);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.new-chat-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* === Анимация звуковых волн === */
+@keyframes sound-wave {
+  0%, 100% {
+    height: 4px;
+    transform: translateY(0);
+  }
+  50% {
+    height: 10px;
+    transform: translateY(-2px);
+  }
+}
+
+.animate-sound-wave {
+  animation: sound-wave 0.8s ease-in-out infinite;
+}

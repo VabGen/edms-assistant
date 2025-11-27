@@ -1,4 +1,3 @@
-// src/components/ParticleEffect.jsx
 import { useEffect, useRef } from 'react';
 
 export default function ParticleEffect({ isActive, onComplete }) {
@@ -7,28 +6,39 @@ export default function ParticleEffect({ isActive, onComplete }) {
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
+    document.body.style.overflow = 'hidden';
+
     const container = containerRef.current;
-    // Очищаем предыдущие частицы
     container.innerHTML = '';
 
-    for (let i = 0; i < 50; i++) {
-      const dx = (Math.random() - 0.5) * 100;
-      const dy = (Math.random() - 0.5) * 100;
+    for (let i = 0; i < 500; i++) {
+      const dx = (Math.random() - 0.5) * 1500;
+      const dy = (Math.random() - 0.5) * 1500;
       const delay = Math.random() * 0.3;
       const duration = 0.5 + Math.random() * 0.5;
 
       const particle = document.createElement('div');
-      particle.className = 'absolute w-1 h-1 bg-blue-500 rounded-full pointer-events-none';
+      const colors = ['#6b7280', '#4b5563', '#374151', '#ffffff'];
+      const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+      particle.className = 'absolute w-1 h-1 rounded-full pointer-events-none';
       particle.style.setProperty('--dx', `${dx}px`);
       particle.style.setProperty('--dy', `${dy}px`);
-      particle.style.animation = `particleExplode ${duration}s ease-out ${delay}s forwards`;
+      particle.style.backgroundColor = randomColor;
+      particle.style.animation = `particleExplode ${duration}s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s forwards`;
 
       container.appendChild(particle);
     }
 
-    // Запускаем callback по завершении всех анимаций
-    const timer = setTimeout(onComplete, 1000);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => {
+      onComplete();
+      document.body.style.overflow = '';
+    }, 1000);
+
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = '';
+    };
   }, [isActive, onComplete]);
 
   if (!isActive) return null;

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class IndexManager:
     def __init__(self):
         self.vector_stores: Dict[str, FAISS] = {}
+        self.file_descriptions: Dict[str, str] = {}
         self._embeddings = None
 
     def get_embeddings(self):
@@ -48,6 +49,11 @@ class IndexManager:
                 vs = FAISS.load_local(store_dir, self.get_embeddings(), allow_dangerous_deserialization=True)
                 with open(chunks_file, "rb") as f:
                     chunks = pickle.load(f)
+
+                desc_path = store_dir / "description.txt"
+                description = desc_path.read_text(encoding="utf-8") if desc_path.exists() else "Описание отсутствует"
+                self.file_descriptions[filename] = description
+
                 self.vector_stores[filename] = vs
                 logger.info(f"✅ Загружен индекс: {filename}")
                 return filename
@@ -57,6 +63,13 @@ class IndexManager:
         # Загрузка и обработка
         loader = get_loader(file_path)
         docs = loader.load()
+
+        full_text = "\n".join(doc.page_content for doc in docs)
+        description = " ".join(full_text[:300].split()) + "..."
+
+        desc_path = store_dir / "description.txt"
+        with open(desc_path, "w", encoding="utf-8") as f:
+            f.write(description)
 
         cleaned_docs = []
         for doc in docs:
@@ -99,6 +112,7 @@ class IndexManager:
         # Сохраняем индекс
         vs.save_local(store_dir)
         self.vector_stores[filename] = vs
+        self.file_descriptions[filename] = description
         logger.info(f"✅ Проиндексирован: {filename}")
         return filename
 

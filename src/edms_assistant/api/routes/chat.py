@@ -181,7 +181,7 @@ async def ask_question_in_chat(
         "chat_history": chat_history[:-1],
         "selected_file": "",
         "answer": "",
-        "retry_count": 0
+        # "retry_count": 0
     }
     final_state = await create_rag_graph().ainvoke(inputs)
     answer = final_state["answer"]

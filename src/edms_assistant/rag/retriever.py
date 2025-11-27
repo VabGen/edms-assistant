@@ -69,25 +69,64 @@ async def _expand_and_route_query(question: str, chat_history: List[Dict]) -> st
 
 async def retrieve_and_generate(
         question: str,
-        filename: str,
         chat_history: List[Dict[str, Any]],
-        vector_store
+        index_manager  # ← принимаем ВЕСЬ менеджер, а не конкретный файл
 ) -> str:
     """
-    Выполняет:
-    1. Расширение запроса,
-    2. Гибридный поиск (семантика + ключевые слова),
-    3. Генерацию ответа на основе найденного контекста.
-
-    Поддерживает все типы документов: текст, таблицы, структурированные формы.
+    Для КАЖДОГО вопроса:
+    1. Выбирает наиболее релевантный файл через маршрутизатор.
+    2. Выполняет гибридный поиск в нём.
+    3. Если не найдено — перебирает остальные файлы (fallback).
     """
+    from src.edms_assistant.rag.router import route_question_to_file
+
     logger.debug(f"💬 История чата (из Redis): {chat_history}")
+
+    # === ШАГ 1: Получаем список с описаниями ===
+    available_files_info = [
+        {"filename": fname, "description": index_manager.file_descriptions.get(fname, "Описание отсутствует")}
+        for fname in index_manager.vector_stores.keys()
+    ]
+    if not available_files_info:
+        return "Нет документов"
+
+    # === ШАГ 2: Маршрутизация — выбор ОСНОВНОГО файла ===
+    primary_file = await route_question_to_file(question, chat_history, available_files_info)
+    logger.debug(f"🧭 Основной файл для вопроса: {primary_file}")
+
+    # === ШАГ 3: Попытка генерации в основном файле ===
+    answer = await _try_generate_in_file(question, chat_history, primary_file, index_manager)
+    if answer and not answer.startswith("REFLECT:"):
+        return answer
+
+    # === ШАГ 4: Fallback — пробуем остальные файлы ===
+    fallback_files = [f for f in available_files_info if f != primary_file]
+    logger.debug(f"🔄 Fallback: попытка в {len(fallback_files)} файлах")
+
+    for alt_file in fallback_files:
+        answer = await _try_generate_in_file(question, chat_history, alt_file, index_manager)
+        if answer and not answer.startswith("REFLECT:") and "не нашёл" not in answer.lower():
+            logger.debug(f"✅ Ответ найден в fallback-файле: {alt_file}")
+            return answer
+
+    return "Я не нашёл информацию в базе знаний."
+
+
+async def _try_generate_in_file(
+        question: str,
+        chat_history: List[Dict[str, Any]],
+        filename: str,
+        index_manager
+) -> str:
+    """Вспомогательная функция: попытка получить ответ из одного файла."""
+    vector_store = index_manager.vector_stores.get(filename)
+    if not vector_store:
+        return "REFLECT: Файл не найден"
 
     # Шаг 1: Расширяем запрос
     enriched_query = await _expand_and_route_query(question, chat_history)
-    logger.debug(f"🔍 Расширенный запрос: {enriched_query}")
 
-    # Шаг 2: Загружаем чанки из диска
+    # Шаг 2: Загружаем чанки
     store_dir = Path(settings.paths.vector_stores_dir) / Path(filename).stem
     chunks_path = store_dir / "chunks.pkl"
 
@@ -106,28 +145,24 @@ async def retrieve_and_generate(
     if not relevant_docs:
         return "REFLECT: Релевантная информация не найдена"
 
-    # Шаг 4: Формируем контекст с метаданными
+    # Шаг 4: Формируем контекст
     context_parts = []
     for doc in relevant_docs:
         source = doc.metadata.get('source', 'Неизвестный источник')
         doc_type = doc.metadata.get('type', 'text')
-
         if doc_type == 'table':
             content = f"ТАБЛИЦА из {source}:\n{doc.page_content}"
         else:
             content = f"ДОКУМЕНТ {source}:\n{doc.page_content}"
-
         context_parts.append(content)
-
     context = "\n\n---\n\n".join(context_parts)
-    logger.debug(f"📚 Контекст:\n{context}")
 
-    # Шаг 5: Формируем историю диалога
+    # Шаг 5: История диалога
     history_str = "\n".join(
         f"[{m['role'].upper()}]: {m['content']}" for m in chat_history
     ) if chat_history else "История отсутствует."
 
-    # Шаг 6: Системный промпт — строгая роль для LLM
+    # Шаг 6: Промпты
     system_prompt = f"""Ты — официальный эксперт по внутренним документам организации. 
 Ты работаешь с разнообразными типами документов: регламентами, инструкциями, приказами, формами, таблицами (Excel), PDF-справочниками.
 
@@ -141,10 +176,12 @@ async def retrieve_and_generate(
 7. Указывай источник (имя файла) при цитировании.
 8. Отвечай на русском языке, полно и детально.
 
+Если в контексте нет ПОЛНОЙ информации для ответа на вопрос — НЕМЕДЛЕННО ответь: «Я не нашёл информацию в документах».
+НЕ пытайся отвечать на основе частичной или косвенной информации.
+
 Контекст (документы):
 {context}"""
 
-    # Шаг 7: Пользовательский промпт
     user_prompt = f"""История диалога:
 {history_str}
 
@@ -153,12 +190,12 @@ async def retrieve_and_generate(
 
 Твой ответ:"""
 
-    # Шаг 8: Вызов LLM
+    # Шаг 7: Вызов LLM
     llm = ChatOpenAI(
         api_key="not-needed",
         base_url=str(settings.vllm.generative_base_url),
         model=settings.vllm.generative_model,
-        temperature=0.0,  # Максимальная детерминированность
+        temperature=0.6,
         max_tokens=1024
     )
 
@@ -168,8 +205,13 @@ async def retrieve_and_generate(
     ])
     answer = resp.content.strip()
 
-    # Шаг 9: Точная проверка на отсутствие информации
-    if answer == "Я не нашёл информацию в документах":
+    # Шаг 8: Проверка на отсутствие информации
+    if (
+            answer == "Я не нашёл информацию в документах" or
+            "в предоставленном контексте нет информации" in answer.lower() or
+            "не указано в предоставленных документах" in answer.lower() or
+            "только информация о" in answer.lower()
+    ):
         return "REFLECT: Релевантная информация не найдена"
 
     return answer

@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 class AgentState(TypedDict):
     question: str
     chat_history: List[Dict[str, Any]]
-    selected_file: str
+    # selected_file: str
     answer: str
-    retry_count: int
+    # retry_count: int
 
 
 async def decide_file_node(state: AgentState) -> AgentState:
@@ -26,14 +26,10 @@ async def decide_file_node(state: AgentState) -> AgentState:
 
 
 async def retrieve_node(state: AgentState) -> AgentState:
-    vs = index_manager.vector_stores.get(state["selected_file"])
-    if not vs:
-        return {**state, "answer": "Файл не найден"}
     answer = await retrieve_and_generate(
         state["question"],
-        state["selected_file"],
         state["chat_history"],
-        vs
+        index_manager
     )
     return {**state, "answer": answer}
 
@@ -63,13 +59,7 @@ def should_reflect(state: AgentState) -> str:
 
 def create_rag_graph():
     workflow = StateGraph(AgentState)
-    workflow.add_node("decide_file", decide_file_node)
     workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("reflect", reflect_node)
-
-    workflow.set_entry_point("decide_file")
-    workflow.add_edge("decide_file", "retrieve")
-    workflow.add_conditional_edges("retrieve", should_reflect, {"reflect": "reflect", "end": END})
-    workflow.add_edge("reflect", END)
-
+    workflow.set_entry_point("retrieve")
+    workflow.add_edge("retrieve", END)
     return workflow.compile()
