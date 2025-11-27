@@ -163,7 +163,7 @@
   }
   100% {
     opacity: 0;
-    transform: scale(0) translate(var(--dx), var(--dy));
+    transform: scale(0.2) translate(var(--dx), var(--dy));
   }
 }
 
@@ -615,4 +615,9 @@
 
 .animate-sound-wave {
   animation: sound-wave 0.8s ease-in-out infinite;
+}
+
+.chat-container {
+  max-width: 95vw;
+  min-width: 320px;
 }

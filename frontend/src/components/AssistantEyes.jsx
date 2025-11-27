@@ -15,7 +15,7 @@ export default function AssistantEyes({ energyMode = 'high' }) {
         const rect = eyeContainerRef.current.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
-        const dx = (e.clientX - centerX) / 20; // Чем дальше — тем больше смещение
+        const dx = (e.clientX - centerX) / 20;
         const dy = (e.clientY - centerY) / 20;
         setCursorPos({ x: dx, y: dy });
       }

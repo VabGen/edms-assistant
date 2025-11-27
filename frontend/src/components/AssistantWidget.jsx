@@ -2,8 +2,12 @@ import React, {useState, useRef, useEffect, useCallback} from 'react';
 import {assistantApi} from '../api/assistantApi';
 import ParticleEffect from './ParticleEffect';
 import ConfirmDialog from './ConfirmDialog';
+import 'dayjs/locale/ru';
+import dayjs from "dayjs";
 
-// Компонент анимации звуковых волн
+dayjs.locale('ru');
+
+// Анимация звуковых волн
 const SoundWaveIndicator = () => (
     <div className="flex items-center justify-center space-x-0.5 w-5 h-5">
         {[0, 1, 2].map((i) => (
@@ -67,26 +71,16 @@ const AssistantWidget = () => {
         }
     }, []);
 
-    // === Функция исправления грамматики на клиенте ===
     const correctGrammar = (text) => {
         let corrected = text.trim();
         if (!corrected) return corrected;
-
         corrected = corrected.charAt(0).toUpperCase() + corrected.slice(1);
         corrected = corrected.replace(/([а-яё])([А-ЯЁ])/g, '$1 $2');
-        if (!/[.!?]$/.test(corrected)) {
-            corrected += '.';
-        }
-
-        const typoMap = {
-            'зопрос': 'запрос',
-            'сдлеать': 'сделать',
-            'каксделать': 'как сделать',
-        };
+        if (!/[.!?]$/.test(corrected)) corrected += '.';
+        const typoMap = {'зопрос': 'запрос', 'сдлеать': 'сделать', 'каксделать': 'как сделать'};
         Object.entries(typoMap).forEach(([wrong, right]) => {
             corrected = corrected.replace(new RegExp(wrong, 'gi'), right);
         });
-
         return corrected;
     };
 
@@ -130,7 +124,6 @@ const AssistantWidget = () => {
         }
     }, [messages]);
 
-    // === Закрытие по клику вне чата ===
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (
@@ -142,10 +135,7 @@ const AssistantWidget = () => {
                 handleClose();
             }
         };
-
-        if (isOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
+        if (isOpen) document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isOpen, isClosing]);
 
@@ -170,7 +160,6 @@ const AssistantWidget = () => {
     const handleConfirmDelete = async () => {
         const {chatId} = confirmDialog;
         setConfirmDialog({isOpen: false, chatId: null});
-
         try {
             await assistantApi.deleteChat(chatId);
             const updated = chats.filter(c => c.chat_id !== chatId);
@@ -188,12 +177,10 @@ const AssistantWidget = () => {
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (!inputValue.trim() || !activeChatId) return;
-
         const userMsg = {role: 'user', content: inputValue, timestamp: new Date().toISOString()};
         setMessages(prev => [...prev, userMsg]);
         setInputValue('');
         setIsLoading(true);
-
         try {
             const res = await assistantApi.sendMessage(activeChatId, inputValue);
             const botMsg = {role: 'assistant', content: res.data.answer, timestamp: new Date().toISOString()};
@@ -212,7 +199,6 @@ const AssistantWidget = () => {
     const handleFileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         const formData = new FormData();
         formData.append('file', file);
         try {
@@ -235,12 +221,8 @@ const AssistantWidget = () => {
     const handleFabClick = () => {
         setShowParticles(true);
         if (fabRef.current) {
-            fabRef.current.style.animation = 'fabFadeOut 0.6s ease-out forwards';
+            fabRef.current.style.animation = 'fabFadeOut 0.8s ease-out forwards';
         }
-        setTimeout(() => {
-            setIsOpen(true);
-            setShowParticles(false);
-        }, 600);
     };
 
     const handleClose = () => {
@@ -257,7 +239,6 @@ const AssistantWidget = () => {
             alert('Распознавание речи не поддерживается в вашем браузере');
             return;
         }
-
         if (isListening) {
             recognition.stop();
         } else {
@@ -266,29 +247,43 @@ const AssistantWidget = () => {
         }
     };
 
-    // === Render ===
     return (
         <div className="fixed bottom-6 right-6 z-50">
             {!isOpen && (
                 <div className="relative" ref={fabRef}>
-                    <ParticleEffect isActive={showParticles} onComplete={() => {
-                    }}/>
+                    <ParticleEffect
+                        isActive={showParticles}
+                        onComplete={() => {
+                            setIsOpen(true);
+                            setShowParticles(false);
+                        }}
+                    />
                     <button
                         onClick={handleFabClick}
-                        className="w-20 h-20 rounded-full flex items-center justify-center relative overflow-hidden bg-transparent shadow-none transition-all duration-300 group"
+                        className="w-20 h-20 rounded-full flex items-center justify-center relative overflow-hidden bg-white/10 backdrop-blur-xl border border-white/20 shadow-2xl shadow-blue-500/10 transition-all duration-300 group hover:shadow-blue-400/20 hover:scale-105"
                         aria-label="Открыть помощника"
                     >
-                        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-950 to-slate-900"/>
-                        <div className="absolute inset-2 rounded-full border-2 border-blue-400/30 animate-pulse-ring"/>
-                        <div className="absolute inset-3 rounded-full border-2 border-blue-500/50 animate-pulse-ring"/>
-                        <div className="absolute inset-4 rounded-full border-2 border-blue-600/70 animate-pulse-ring"/>
-                        <span className="text-white text-lg font-medium tracking-wider animate-pulse">AI</span>
+                        {/* Фон — тёмно-синий градиент под стеклом */}
                         <div
-                            className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500/10 to-blue-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"/>
+                            className="absolute inset-0 rounded-full bg-gradient-to-br from-indigo-950/80 to-slate-900/80"/>
+
+                        {/* Неоновые кольца — яркие и мерцающие */}
                         <div
-                            className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-400/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"/>
+                            className="absolute inset-2 rounded-full border-2 border-blue-400/50 animate-pulse-ring opacity-80"/>
                         <div
-                            className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-10 h-1 bg-black/10 rounded-full blur-sm"/>
+                            className="absolute inset-3 rounded-full border-2 border-cyan-300/60 animate-pulse-ring opacity-90"/>
+                        <div className="absolute inset-4 rounded-full border-2 border-blue-300/70 animate-pulse-ring"/>
+
+                        {/* Центральный текст */}
+                        <span className="text-white text-lg font-medium tracking-wider animate-pulse z-10">AI</span>
+
+                        {/* Внутреннее свечение при наведении */}
+                        <div
+                            className="absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/5 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"/>
+
+                        {/* Парящая тень */}
+                        <div
+                            className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-16 h-2 bg-blue-500/20 rounded-full blur-md"></div>
                     </button>
                 </div>
             )}
@@ -296,16 +291,22 @@ const AssistantWidget = () => {
             {(isOpen || isClosing) && (
                 <div
                     ref={chatContainerRef}
-                    className={`bg-white rounded-2xl shadow-xl overflow-hidden w-full max-w-[95vw] h-[600px] flex flex-col transition-all duration-300 ${
+                    className={`bg-white/10 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 overflow-hidden w-full max-w-[95vw] min-w-0 h-[600px] flex flex-col transition-all duration-300 ${
                         isClosing ? 'animate-fadeOutScale' : 'animate-fadeInScale'
                     }`}
-                    style={{width: isChatPanelOpen ? '624px' : '460px'}}
+                    style={{
+                        width: isChatPanelOpen ? '624px' : '460px',
+                        maxWidth: '95vw',
+                        minWidth: '320px',
+                    }}
                 >
-                    <div className="p-4 flex items-center justify-between border-b border-gray-200">
+                    {/* Заголовок */}
+                    <div
+                        className="p-4 flex items-center justify-between border-b border-white/20 bg-white/5 backdrop-blur-sm rounded-t-2xl">
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setIsChatPanelOpen(!isChatPanelOpen)}
-                                className="p-1.5 rounded-md hover:bg-gray-100 transition"
+                                className="p-1.5 rounded-md hover:bg-white/10 transition text-white"
                             >
                                 {isChatPanelOpen ? (
                                     <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none"
@@ -321,17 +322,19 @@ const AssistantWidget = () => {
                                     </svg>
                                 )}
                             </button>
-                            <h3 className="font-semibold text-gray-800">AI Помощник</h3>
+                            <h3 className="font-semibold text-white">AI Помощник</h3>
                         </div>
                     </div>
 
                     <div className="flex-1 flex overflow-hidden">
+                        {/* Панель чатов */}
                         {isChatPanelOpen && (
-                            <div className="w-3/5 bg-gray-800 text-white flex flex-col">
-                                <div className="p-3 mb-2 flex justify-between items-center border-b border-gray-700">
-                                    <h4 className="text-sm font-medium">Мои чаты</h4>
+                            <div
+                                className="w-3/5 min-w-0 bg-white/10 backdrop-blur-xl border-r border-white/20 flex flex-col">
+                                <div className="p-3 mb-2 flex justify-between items-center border-b border-white/20">
+                                    <h4 className="text-sm font-medium text-white">Мои чаты</h4>
                                 </div>
-                                <div className="p-2 flex-1 overflow-y-auto">
+                                <div className="p-2 flex-1 overflow-y-auto custom-scrollbar">
                                     {chats.map((chat) => (
                                         <div
                                             key={chat.chat_id}
@@ -340,12 +343,16 @@ const AssistantWidget = () => {
                                                 setIsChatPanelOpen(false);
                                             }}
                                             className={`mb-2 p-2 text-sm cursor-pointer rounded-lg flex justify-between items-center ${
-                                                activeChatId === chat.chat_id ? 'bg-blue-600' : 'hover:bg-gray-700'
-                                            }`}
+                                                activeChatId === chat.chat_id
+                                                    ? 'bg-blue-500/30 border border-blue-400/50'
+                                                    : 'hover:bg-white/10'
+                                            } text-white transition-colors`}
                                         >
                                             <span className="truncate w-full">{chat.preview}</span>
-                                            <button onClick={(e) => deleteChat(chat.chat_id, e)}
-                                                    className="p-1 rounded-full hover:bg-red-500/20">
+                                            <button
+                                                onClick={(e) => deleteChat(chat.chat_id, e)}
+                                                className="p-1 rounded-full hover:bg-red-500/20 text-white/80"
+                                            >
                                                 <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
                                                      viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -354,34 +361,35 @@ const AssistantWidget = () => {
                                             </button>
                                         </div>
                                     ))}
-                                    {chats.length === 0 && <div className="text-gray-400 text-sm p-2">Нет чатов</div>}
+                                    {chats.length === 0 && <div className="text-white/60 text-sm p-2">Нет чатов</div>}
                                 </div>
-                                <div className="p-3 border-gray-700">
+                                <div className="p-5">
                                     <button
                                         onClick={createNewChat}
-                                        className="w-full py-2 gap-3 bg-indigo-700 rounded-full text-sm hover:bg-indigo-400 transition flex items-center justify-center"
+                                        className="w-29 py-2 gap-0 bg-blue-500/10 hover:bg-blue-300/10 rounded-full text-sm text-black transition flex items-center justify-center border border-indigo-400/50"
                                     >
-                    <span className="mr-2">
-                      <img src={'/fab-i.svg'} alt="Новый чат" style={{width: '24px', height: '24px'}}/>
-                    </span>
+                                        <span className="mr-1">
+                                            <img src={'/fab-i.svg'} alt="Новый чат"
+                                                 style={{width: '24px', height: '24px'}}/>
+                                        </span>
                                         <span className="text-center">Новый чат</span>
                                     </button>
                                 </div>
                             </div>
                         )}
 
+                        {/* Основная область чата */}
                         <div className="flex-1 flex flex-col">
-                            <div
-                                className="flex-1 p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                            <div className="flex-1 p-4 overflow-y-auto custom-scrollbar">
                                 {messages.map((msg, idx) => (
                                     <div key={idx}
                                          className={`mb-3 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                         <div
-                                            className={`max-w-[85%] px-4 py-2.5 text-sm rounded-2xl break-words ${
+                                            className={`max-w-[85%] px-4 py-2.5 text-sm rounded-2xl break-words backdrop-blur-sm ${
                                                 msg.role === 'user'
-                                                    ? 'bg-blue-600 text-white rounded-br-none'
-                                                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                                            }`}
+                                                    ? 'bg-blue-500/20 text-white border border-blue-400/30'
+                                                    : 'bg-white/10 text-white/90 border border-white/20'
+                                            } min-w-0`}
                                         >
                                             {msg.content}
                                         </div>
@@ -390,11 +398,11 @@ const AssistantWidget = () => {
                                 {isLoading && (
                                     <div className="mb-3 flex justify-start">
                                         <div
-                                            className="bg-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-none flex space-x-1">
+                                            className="bg-white/10 px-4 py-2.5 rounded-2xl rounded-bl-none flex space-x-1 border border-white/20">
                                             {[0, 1, 2].map((i) => (
                                                 <div
                                                     key={i}
-                                                    className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
+                                                    className="w-1.5 h-1.5 bg-white/60 rounded-full animate-bounce"
                                                     style={{animationDelay: `${i * 0.1}s`}}
                                                 />
                                             ))}
@@ -404,15 +412,17 @@ const AssistantWidget = () => {
                                 <div ref={messagesEndRef}/>
                             </div>
 
-                            <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-100">
+                            {/* Форма ввода */}
+                            <form onSubmit={handleSendMessage}
+                                  className="p-4 border-t border-white/20 bg-white/5 backdrop-blur-sm">
                                 <div className="flex items-center space-x-2">
                                     <button
                                         type="button"
                                         onClick={toggleListening}
                                         className={`w-10 h-10 rounded-full flex items-center justify-center transition ${
                                             isListening
-                                                ? 'bg-red-500'
-                                                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                                ? 'bg-red-500/90'
+                                                : 'bg-white/10 border border-white/20 text-white/80 hover:bg-white/20'
                                         }`}
                                         aria-label={isListening ? 'Остановить запись' : 'Начать запись'}
                                     >
@@ -430,13 +440,13 @@ const AssistantWidget = () => {
                                         value={inputValue}
                                         onChange={(e) => setInputValue(e.target.value)}
                                         placeholder="Сообщение..."
-                                        className="flex-1 bg-gray-100 rounded-full px-4 py-2.5 text-gray-800 outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition"
+                                        className="flex-1 bg-white/10 backdrop-blur-sm rounded-full px-4 py-2.5 text-white/90 outline-none border border-white/20 focus:ring-2 focus:ring-blue-400/50 focus:bg-white/20 transition placeholder:text-white/50 min-w-0"
                                         disabled={isLoading || isListening}
                                     />
                                     <label htmlFor="file-upload"
-                                           className="cursor-pointer w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-gray-600"
-                                             fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                           className="cursor-pointer w-10 h-10 rounded-full bg-white/10 border border-white/20 flex items-center justify-center hover:bg-white/20 text-white/80">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
+                                             viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                                   d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586V16a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2h8a2 2 0 012 2v2.828z"/>
                                         </svg>
@@ -444,7 +454,7 @@ const AssistantWidget = () => {
                                     <button
                                         type="submit"
                                         disabled={!inputValue.trim() || isLoading}
-                                        className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center disabled:bg-gray-300 hover:bg-blue-400 transition"
+                                        className="w-10 h-10 rounded-full bg-blue-500/30 border border-blue-400/50 text-white flex items-center justify-center disabled:bg-gray-300/30 hover:bg-blue-400/40 transition"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none"
                                              viewBox="0 0 24 24" stroke="currentColor">
