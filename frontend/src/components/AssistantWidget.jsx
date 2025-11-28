@@ -330,8 +330,8 @@ const AssistantWidget = () => {
                         {/* Панель чатов */}
                         {isChatPanelOpen && (
                             <div
-                                className="w-3/5 min-w-0 bg-white/10 backdrop-blur-xl border-r border-white/20 flex flex-col">
-                                <div className="p-3 mb-2 flex justify-between items-center border-b border-white/20">
+                                className="w-3/5 min-w-0 bg-white/10 backdrop-blur-xl flex flex-col">
+                                <div className="p-3 mb-2 flex justify-between items-center">
                                     <h4 className="text-sm font-medium text-white">Мои чаты</h4>
                                 </div>
                                 <div className="p-2 flex-1 overflow-y-auto custom-scrollbar">
@@ -366,13 +366,13 @@ const AssistantWidget = () => {
                                 <div className="p-5">
                                     <button
                                         onClick={createNewChat}
-                                        className="w-29 py-2 gap-0 bg-blue-500/10 hover:bg-blue-300/10 rounded-full text-sm text-black transition flex items-center justify-center border border-indigo-400/50"
+                                        className="w-15 py-2 gap-1 bg-blue-500/10 hover:bg-blue-300/10 rounded-full text-sm text-black transition flex items-center justify-center border border-indigo-400/50"
                                     >
                                         <span className="mr-1">
                                             <img src={'/fab-i.svg'} alt="Новый чат"
                                                  style={{width: '24px', height: '24px'}}/>
                                         </span>
-                                        <span className="text-center">Новый чат</span>
+                                        <span className="text-center"><b>+</b></span>
                                     </button>
                                 </div>
                             </div>
